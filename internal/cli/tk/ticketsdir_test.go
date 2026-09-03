@@ -6,21 +6,22 @@ import (
 	"testing"
 )
 
-func TestResolveTicketsDir_EnvVarWins(t *testing.T) {
+func TestLocateTicketsDir_EnvVarWins(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("TICKETS_DIR", dir)
 
-	got, err := resolveTicketsDir(false)
-	if err != nil {
-		t.Fatalf("resolveTicketsDir: %v", err)
+	got, ok := locateTicketsDir()
+	if !ok {
+		t.Fatal("locateTicketsDir: want ok=true")
 	}
 	if got != dir {
-		t.Errorf("resolveTicketsDir = %q, want %q", got, dir)
+		t.Errorf("locateTicketsDir = %q, want %q", got, dir)
 	}
 }
 
-func TestResolveTicketsDir_WalksUpFromCwd(t *testing.T) {
+func TestLocateTicketsDir_WalksUpFromCwd(t *testing.T) {
 	t.Setenv("TICKETS_DIR", "")
+	os.Unsetenv("TICKETS_DIR")
 	repoDir := t.TempDir()
 	ticketsDir := filepath.Join(repoDir, ".tickets")
 	if err := os.MkdirAll(ticketsDir, 0o755); err != nil {
@@ -34,38 +35,40 @@ func TestResolveTicketsDir_WalksUpFromCwd(t *testing.T) {
 	restore := chdir(t, nested)
 	defer restore()
 
-	got, err := resolveTicketsDir(false)
-	if err != nil {
-		t.Fatalf("resolveTicketsDir: %v", err)
+	got, ok := locateTicketsDir()
+	if !ok {
+		t.Fatal("locateTicketsDir: want ok=true")
 	}
 	wantAbs, _ := filepath.EvalSymlinks(ticketsDir)
 	gotAbs, _ := filepath.EvalSymlinks(got)
 	if gotAbs != wantAbs {
-		t.Errorf("resolveTicketsDir = %q, want %q", got, ticketsDir)
+		t.Errorf("locateTicketsDir = %q, want %q", got, ticketsDir)
 	}
 }
 
-func TestResolveTicketsDir_NotFoundErrorsWithoutAllowCreate(t *testing.T) {
+func TestFindTicketsDir_NotFoundErrors(t *testing.T) {
 	t.Setenv("TICKETS_DIR", "")
+	os.Unsetenv("TICKETS_DIR")
 	restore := chdir(t, t.TempDir())
 	defer restore()
 
-	if _, err := resolveTicketsDir(false); err == nil {
-		t.Fatal("resolveTicketsDir: want error when no .tickets exists, got nil")
+	if _, err := findTicketsDir(); err == nil {
+		t.Fatal("findTicketsDir: want error when no .tickets exists, got nil")
 	}
 }
 
-func TestResolveTicketsDir_NotFoundFallsBackToDotTicketsWithAllowCreate(t *testing.T) {
+func TestFindOrInitTicketsDir_NotFoundFallsBackToDotTickets(t *testing.T) {
 	t.Setenv("TICKETS_DIR", "")
+	os.Unsetenv("TICKETS_DIR")
 	restore := chdir(t, t.TempDir())
 	defer restore()
 
-	got, err := resolveTicketsDir(true)
+	got, err := findOrInitTicketsDir()
 	if err != nil {
-		t.Fatalf("resolveTicketsDir: %v", err)
+		t.Fatalf("findOrInitTicketsDir: %v", err)
 	}
 	if got != ".tickets" {
-		t.Errorf("resolveTicketsDir = %q, want %q", got, ".tickets")
+		t.Errorf("findOrInitTicketsDir = %q, want %q", got, ".tickets")
 	}
 }
 

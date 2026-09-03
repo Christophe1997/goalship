@@ -13,7 +13,7 @@ func NewReadyCmd() *cobra.Command {
 		Use:   "ready",
 		Short: "List open/in-progress tickets whose dependencies are all closed",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ticketsDir, err := resolveTicketsDir(false)
+			ticketsDir, err := findTicketsDir()
 			if err != nil {
 				return err
 			}

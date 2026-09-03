@@ -10,7 +10,7 @@ func NewStartCmd() *cobra.Command {
 		Short: "Mark a ticket as started (status -> in_progress)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ticketsDir, err := resolveTicketsDir(false)
+			ticketsDir, err := findTicketsDir()
 			if err != nil {
 				return err
 			}

@@ -65,7 +65,7 @@ func NewAddNoteCmd() *cobra.Command {
 				return fmt.Errorf("tk add-note: no note provided")
 			}
 
-			ticketsDir, err := resolveTicketsDir(false)
+			ticketsDir, err := findTicketsDir()
 			if err != nil {
 				return err
 			}

@@ -137,7 +137,7 @@ func NewCreateCmd() *cobra.Command {
 			}
 			opts.assignee = resolveAssignee(cmd.Flags().Changed("assignee"), opts.assignee)
 
-			ticketsDir, err := resolveTicketsDir(true)
+			ticketsDir, err := findOrInitTicketsDir()
 			if err != nil {
 				return err
 			}

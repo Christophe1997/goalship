@@ -26,7 +26,7 @@ func NewEditCmd() *cobra.Command {
 		Short: "Edit a ticket's raw file in $EDITOR",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ticketsDir, err := resolveTicketsDir(false)
+			ticketsDir, err := findTicketsDir()
 			if err != nil {
 				return err
 			}

@@ -51,7 +51,7 @@ func NewStatusCmd() *cobra.Command {
 		Short: "Update a ticket's status (open|in_progress|closed)",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ticketsDir, err := resolveTicketsDir(false)
+			ticketsDir, err := findTicketsDir()
 			if err != nil {
 				return err
 			}

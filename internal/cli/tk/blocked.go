@@ -14,7 +14,7 @@ func NewBlockedCmd() *cobra.Command {
 		Use:   "blocked",
 		Short: "List open/in-progress tickets with at least one unresolved dependency",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ticketsDir, err := resolveTicketsDir(false)
+			ticketsDir, err := findTicketsDir()
 			if err != nil {
 				return err
 			}

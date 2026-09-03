@@ -172,7 +172,7 @@ func NewShowCmd() *cobra.Command {
 		Short: "Display a ticket, including derived relationship sections",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ticketsDir, err := resolveTicketsDir(false)
+			ticketsDir, err := findTicketsDir()
 			if err != nil {
 				return err
 			}

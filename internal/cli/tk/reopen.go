@@ -10,7 +10,7 @@ func NewReopenCmd() *cobra.Command {
 		Short: "Reopen a closed ticket (status -> open)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ticketsDir, err := resolveTicketsDir(false)
+			ticketsDir, err := findTicketsDir()
 			if err != nil {
 				return err
 			}

@@ -21,7 +21,7 @@ func NewClosedCmd() *cobra.Command {
 		Use:   "closed",
 		Short: "List recently closed tickets, most recently modified first",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ticketsDir, err := resolveTicketsDir(false)
+			ticketsDir, err := findTicketsDir()
 			if err != nil {
 				return err
 			}

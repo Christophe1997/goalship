@@ -15,7 +15,7 @@ func NewLsCmd() *cobra.Command {
 		Aliases: []string{"list"},
 		Short:   "List tickets",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ticketsDir, err := resolveTicketsDir(false)
+			ticketsDir, err := findTicketsDir()
 			if err != nil {
 				return err
 			}

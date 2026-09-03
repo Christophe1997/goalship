@@ -10,7 +10,7 @@ func NewCloseCmd() *cobra.Command {
 		Short: "Close a ticket (status -> closed)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ticketsDir, err := resolveTicketsDir(false)
+			ticketsDir, err := findTicketsDir()
 			if err != nil {
 				return err
 			}
