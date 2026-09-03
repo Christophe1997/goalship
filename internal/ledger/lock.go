@@ -48,7 +48,7 @@ func (e *LockHeldError) Error() string {
 // a caller with no lock has no way to know how long to wait, and this
 // package's whole reason for existing is to fail fast instead.
 func AcquireReviewLock(repoRoot, runID string) (*ReviewLock, error) {
-	dir := filepath.Join(repoRoot, ".goalship")
+	dir := filepath.Join(repoRoot, ledgerDirName)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, fmt.Errorf("ledger: create %s: %w", dir, err)
 	}
