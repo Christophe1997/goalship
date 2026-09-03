@@ -143,6 +143,60 @@ func TestNewLsCmd_AliasList(t *testing.T) {
 	}
 }
 
+// TestNewLsCmd_MissingLinksFieldStillAppearsWithWarning covers goa-ioe4's
+// primary acceptance criterion: a ticket missing an optional-but-formerly-
+// required field still appears in ls output (tolerant parsing), and the
+// defaulting is reported to stderr rather than silent.
+func TestNewLsCmd_MissingLinksFieldStillAppearsWithWarning(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("TICKETS_DIR", dir)
+	writeRawTicket(t, dir, "goa-mal1.md",
+		"---\nid: goa-mal1\nstatus: open\ndeps: []\ncreated: 2026-01-01T00:00:00Z\ntype: task\npriority: 2\n---\n# Malformed\n")
+
+	cmd := NewLsCmd()
+	var out, errOut bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&errOut)
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !bytes.Contains(out.Bytes(), []byte("goa-mal1 [open] - Malformed")) {
+		t.Errorf("output missing tolerated malformed ticket, got:\n%s", out.String())
+	}
+	if !bytes.Contains(errOut.Bytes(), []byte("goa-mal1.md")) || !bytes.Contains(errOut.Bytes(), []byte("links")) {
+		t.Errorf("stderr should warn naming the file and the defaulted links field, got:\n%s", errOut.String())
+	}
+}
+
+// TestNewLsCmd_UnparseableTicketSkippedWithWarningNamingFile covers the
+// other half of the acceptance criteria: a file with nothing sane to
+// default (no frontmatter delimiters at all) is skipped, but loudly —
+// named on stderr — rather than vanishing without a trace, while
+// well-formed tickets are unaffected.
+func TestNewLsCmd_UnparseableTicketSkippedWithWarningNamingFile(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("TICKETS_DIR", dir)
+	writeRawTicket(t, dir, "not-a-ticket.md", "just some text, no frontmatter at all\n")
+	goodID, err := runCreate(dir, createOptions{title: "Good", ticketType: "task", priority: 2})
+	if err != nil {
+		t.Fatalf("runCreate: %v", err)
+	}
+
+	cmd := NewLsCmd()
+	var out, errOut bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&errOut)
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !bytes.Contains(out.Bytes(), []byte(goodID)) {
+		t.Errorf("output missing well-formed ticket, got:\n%s", out.String())
+	}
+	if !bytes.Contains(errOut.Bytes(), []byte("not-a-ticket.md")) {
+		t.Errorf("stderr should name the skipped file, got:\n%s", errOut.String())
+	}
+}
+
 func addDep(t *testing.T, dir, id, depID string) {
 	t.Helper()
 	setDeps(t, dir, id, depID)

@@ -19,7 +19,7 @@ func NewLsCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			infos, err := loadTicketInfos(ticketsDir)
+			infos, err := loadTicketInfos(ticketsDir, cmd.ErrOrStderr())
 			if err != nil {
 				return err
 			}

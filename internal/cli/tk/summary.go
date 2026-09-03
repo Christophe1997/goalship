@@ -1,6 +1,8 @@
 package tk
 
 import (
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -28,21 +30,21 @@ type ticketInfo struct {
 
 // loadTicketInfos reads every *.md file in ticketsDir (already sorted by
 // filename — os.ReadDir's documented guarantee, matching bash tk's own
-// sorted glob expansion) into a ticketInfo, skipping any file that fails
-// to parse.
+// sorted glob expansion) into a ticketInfo via ticket.ParseTolerant, which
+// defaults a missing/malformed field the way bash tk's own awk-based list
+// readers do rather than rejecting the whole file — so ls/ready/blocked/
+// closed degrade a hand-edited ticket gracefully instead of dropping it
+// (goa-ioe4): a ticket silently missing from `ready` reads identically to
+// one genuinely blocked by open deps, to a caller with no other signal.
 //
-// This is a known divergence from bash tk, not a match for it: awk's
-// field-by-field regex scan tolerates a ticket missing a field it wants
-// (e.g. no "links:" line — yaml_field/add_link_to_file already treat that
-// as absent, defaulting to "[]") by leaving that one field blank, while
-// ticket.Parse rejects the whole file when a required field is missing (or
-// a key repeats, or an array value isn't "[...]" shaped) — so that ticket
-// disappears from ls/ready/blocked/closed entirely instead of appearing
-// with partial data. Silent omission from `ready` in particular is
-// indistinguishable from "genuinely blocked" to a caller. Not fixed here
-// (out of this ticket's scope); flagged as a follow-up in the ticket
-// report.
-func loadTicketInfos(ticketsDir string) ([]ticketInfo, error) {
+// warn receives one line per file that had anything defaulted (naming
+// what), plus one line per file skipped outright (missing id, or no
+// frontmatter delimiters at all — nothing sane to default for either).
+// Pass io.Discard when a caller doesn't want that surfaced (show's use of
+// this same helper is for cross-referencing OTHER tickets' derived
+// relationship sections, not the primary ticket.Load it already did
+// strictly for the target id).
+func loadTicketInfos(ticketsDir string, warn io.Writer) ([]ticketInfo, error) {
 	entries, err := os.ReadDir(ticketsDir)
 	if err != nil {
 		return nil, err
@@ -54,9 +56,18 @@ func loadTicketInfos(ticketsDir string) ([]ticketInfo, error) {
 			continue
 		}
 		path := filepath.Join(ticketsDir, e.Name())
-		t, err := ticket.Load(path)
+		data, err := os.ReadFile(path)
 		if err != nil {
+			fmt.Fprintf(warn, "tk: skipping %s: %v\n", e.Name(), err)
 			continue
+		}
+		t, warnings, err := ticket.ParseTolerant(data)
+		if err != nil {
+			fmt.Fprintf(warn, "tk: skipping %s: %v\n", e.Name(), err)
+			continue
+		}
+		if len(warnings) > 0 {
+			fmt.Fprintf(warn, "tk: %s: %s\n", e.Name(), strings.Join(warnings, "; "))
 		}
 		fi, err := e.Info()
 		if err != nil {

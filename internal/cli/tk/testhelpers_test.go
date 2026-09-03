@@ -1,6 +1,7 @@
 package tk
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -29,6 +30,17 @@ func loadForTest(t *testing.T, path string) *ticket.Ticket {
 // convention Parse/Bytes rely on (see internal/ticket.Field's doc).
 func ticketFieldForTest(key, value string) ticket.Field {
 	return ticket.Field{Key: key, Value: " " + value}
+}
+
+// writeRawTicket writes content verbatim as filename in dir — for
+// hand-constructed malformed fixtures (missing/non-bracket fields, no
+// frontmatter at all) that runCreate can't produce, since it always
+// writes well-formed frontmatter.
+func writeRawTicket(t *testing.T, dir, filename, content string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, filename), []byte(content), 0o644); err != nil {
+		t.Fatalf("write ticket %s: %v", filename, err)
+	}
 }
 
 // setDeps hand-writes a ticket's deps array directly via the ticket
