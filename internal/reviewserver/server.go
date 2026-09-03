@@ -1,8 +1,7 @@
 // Package reviewserver implements `goalship review`'s local HTTP checkpoint:
 // a loopback-only server, gated by a per-invocation token and Host
-// validation (security.go), serving the embedded review UI. Route handlers
-// for actual ticket-graph data are ticket U8B; this package ships the
-// server skeleton, security checks, asset serving, and process lifecycle.
+// validation (security.go), serving the embedded review UI (routes.go) and
+// the ticket-graph/review-decision API (api.go).
 package reviewserver
 
 import (
@@ -16,7 +15,9 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"time"
 
@@ -89,7 +90,26 @@ func Run(ctx context.Context, opts Options) error {
 		openBrowser = defaultOpenBrowser
 	}
 
-	handler := newHandler(token)
+	// runCtx converges two independent shutdown triggers on one path: the
+	// externally-supplied ctx (SIGINT/SIGTERM, via internal/cli/review.go's
+	// signal.NotifyContext) and POST /api/approve's internal one (cancel,
+	// handed to apiState below). Either firing unblocks the select loop
+	// the same way.
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	ticketsDir := filepath.Join(opts.RepoRoot, ".tickets")
+	if v := os.Getenv("TICKETS_DIR"); v != "" {
+		ticketsDir = v
+	}
+
+	state := &apiState{
+		repoRoot:   opts.RepoRoot,
+		runID:      opts.RunID,
+		ticketsDir: ticketsDir,
+		cancel:     cancel,
+	}
+	handler := newReviewHandler(token, state)
 	srv := &http.Server{Handler: handler}
 
 	url := fmt.Sprintf("http://%s/?token=%s", listener.Addr(), token)
@@ -110,9 +130,9 @@ func Run(ctx context.Context, opts Options) error {
 			return fmt.Errorf("reviewserver: serve: %w", err)
 		}
 		return nil
-	case <-ctx.Done():
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
-		defer cancel()
+	case <-runCtx.Done():
+		shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), shutdownTimeout)
+		defer cancelShutdown()
 		if err := srv.Shutdown(shutdownCtx); err != nil {
 			return fmt.Errorf("reviewserver: shutdown: %w", err)
 		}
