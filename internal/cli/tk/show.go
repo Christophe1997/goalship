@@ -32,7 +32,12 @@ func runShow(ticketsDir, id string, w io.Writer) error {
 		return fmt.Errorf("tk show: %w", err)
 	}
 
-	infos, err := loadTicketInfos(ticketsDir)
+	// io.Discard: runShow's own target-ticket load above is strict (a
+	// malformed target should error, not degrade); tolerant defaults for
+	// OTHER tickets only feed derived relationship sections below, where
+	// warnings about someone else's file aren't this command's job to
+	// surface (ls/ready/blocked/closed do that instead).
+	infos, err := loadTicketInfos(ticketsDir, io.Discard)
 	if err != nil {
 		return fmt.Errorf("tk show: %w", err)
 	}

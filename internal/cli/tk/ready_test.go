@@ -149,6 +149,53 @@ func TestNewReadyCmd_SortedByPriorityThenID(t *testing.T) {
 	}
 }
 
+func TestNewReadyCmd_MissingLinksTicketStillReady(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("TICKETS_DIR", dir)
+	writeRawTicket(t, dir, "goa-mal3.md",
+		"---\nid: goa-mal3\nstatus: open\ndeps: []\ncreated: 2026-01-01T00:00:00Z\ntype: task\npriority: 2\n---\n# Ready despite missing links\n")
+
+	cmd := NewReadyCmd()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	want := "goa-mal3 [P2][open] - Ready despite missing links\n"
+	if out.String() != want {
+		t.Errorf("output = %q, want %q", out.String(), want)
+	}
+}
+
+// TestNewReadyCmd_MalformedClosedDepDoesNotWronglyBlockDependent is
+// goa-ioe4's actual motivating danger, not just "the malformed ticket
+// itself is visible": before ParseTolerant, a malformed-but-genuinely-
+// closed dependency vanished from loadTicketInfos entirely, so
+// statusByID[dep] read back "" — never "closed" — and a perfectly
+// well-formed DEPENDENT ticket silently disappeared from `ready`,
+// indistinguishable from one truly blocked by an open dependency.
+func TestNewReadyCmd_MalformedClosedDepDoesNotWronglyBlockDependent(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("TICKETS_DIR", dir)
+	writeRawTicket(t, dir, "goa-dep1.md",
+		"---\nid: goa-dep1\nstatus: closed\ndeps: []\ncreated: 2026-01-01T00:00:00Z\ntype: task\npriority: 2\n---\n# Malformed but closed dep\n")
+	id, err := runCreate(dir, createOptions{title: "Depends on malformed-but-closed", ticketType: "task", priority: 2})
+	if err != nil {
+		t.Fatalf("runCreate: %v", err)
+	}
+	setDeps(t, dir, id, "goa-dep1")
+
+	cmd := NewReadyCmd()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !bytes.Contains(out.Bytes(), []byte(id)) {
+		t.Errorf("dependent should be ready (its only dep is closed, just missing links), got:\n%s", out.String())
+	}
+}
+
 func TestNewReadyCmd_AssigneeAndTagFilters(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("TICKETS_DIR", dir)

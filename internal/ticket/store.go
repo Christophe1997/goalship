@@ -69,6 +69,32 @@ type Ticket struct {
 // the body) is not special: only the first two delimit the frontmatter.
 var frontmatterDelim = regexp.MustCompile(`(?m)^---$`)
 
+// splitFrontmatter locates s's frontmatter fence, shared by Parse and
+// ParseTolerant: both must agree on where the frontmatter ends and the
+// body begins before they can diverge on how strictly to read the fields
+// between.
+func splitFrontmatter(s string) (fmStart, fmEnd int, body string, err error) {
+	locs := frontmatterDelim.FindAllStringIndex(s, -1)
+	if len(locs) < 2 || locs[0][0] != 0 {
+		return 0, 0, "", fmt.Errorf("ticket: no frontmatter delimiters found")
+	}
+
+	fmStart = locs[0][1]
+	if fmStart < len(s) && s[fmStart] == '\n' {
+		fmStart++
+	}
+	fmEnd = locs[1][0]
+
+	bodyStart := locs[1][1]
+	if bodyStart < len(s) && s[bodyStart] == '\n' {
+		bodyStart++
+	}
+	if bodyStart <= len(s) {
+		body = s[bodyStart:]
+	}
+	return fmStart, fmEnd, body, nil
+}
+
 // Parse decodes a .tickets/*.md file's raw bytes into a Ticket. It is a
 // targeted line-based parser, not a general YAML library: tk's frontmatter
 // is unquoted "key: value" pairs with a fixed "[a, b]" array syntax, and a
@@ -77,24 +103,9 @@ var frontmatterDelim = regexp.MustCompile(`(?m)^---$`)
 // require.
 func Parse(data []byte) (*Ticket, error) {
 	s := string(data)
-	locs := frontmatterDelim.FindAllStringIndex(s, -1)
-	if len(locs) < 2 || locs[0][0] != 0 {
-		return nil, fmt.Errorf("ticket: no frontmatter delimiters found")
-	}
-
-	fmStart := locs[0][1]
-	if fmStart < len(s) && s[fmStart] == '\n' {
-		fmStart++
-	}
-	fmEnd := locs[1][0]
-
-	bodyStart := locs[1][1]
-	if bodyStart < len(s) && s[bodyStart] == '\n' {
-		bodyStart++
-	}
-	body := ""
-	if bodyStart <= len(s) {
-		body = s[bodyStart:]
+	fmStart, fmEnd, body, err := splitFrontmatter(s)
+	if err != nil {
+		return nil, err
 	}
 
 	t := &Ticket{Body: body}
@@ -169,6 +180,161 @@ func Load(path string) (*Ticket, error) {
 		return nil, fmt.Errorf("ticket: load %s: %w", path, err)
 	}
 	return t, nil
+}
+
+// ParseTolerant decodes a ticket the way bash tk's awk-based list readers
+// do: a field regex that never matches reads back as its zero value
+// instead of failing the file, so a hand-edited or partially-migrated
+// ticket degrades gracefully rather than vanishing from every listing
+// (R2). It still returns an error — there is nothing sane to default —
+// when there are no frontmatter delimiters at all, or when "id" itself is
+// missing: every list command keys tickets by id internally.
+//
+// Every other core-field default mirrors what bash tk's cmd_ls/cmd_ready/
+// cmd_blocked/cmd_closed actually read back for an unset field, not an
+// invented convenience value: status "" (never "open" — awk leaves the
+// variable blank, which is why such a ticket shows in `ls` but never in
+// `ready`/`blocked`/`closed`), priority 2 (awk: `priority != "" ? priority
+// : 2`), deps/links [] (awk: an empty deps string is simply "no deps").
+// created/type have no awk list-reader default because no list command
+// reads them; ParseTolerant leaves them "" rather than inventing one.
+//
+// warnings names, in file order, every field that was defaulted or
+// otherwise not read literally (missing, duplicated — last occurrence
+// wins, matching awk's repeated-assignment semantics — or, for deps/
+// links, present but not "[a, b]" syntax) so a caller can report exactly
+// what it degraded instead of leaving the ticket indistinguishable from a
+// clean one.
+//
+// The returned Ticket must never be Save'd: defaulted fields would
+// materialize invented data into the user's file, and a duplicate key's
+// last-occurrence-wins value would round-trip through Bytes()'s
+// first-occurrence-wins field order incorrectly. Callers only ever
+// project it into a read-only view (see internal/cli/tk's ticketInfo).
+func ParseTolerant(data []byte) (*Ticket, []string, error) {
+	s := string(data)
+	fmStart, fmEnd, body, err := splitFrontmatter(s)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	t := &Ticket{Body: body}
+	var warnings []string
+	seen := make(map[string]bool)
+	extraIdx := make(map[string]int)
+
+	for _, line := range strings.Split(s[fmStart:fmEnd], "\n") {
+		if line == "" {
+			continue
+		}
+		idx := strings.IndexByte(line, ':')
+		if idx < 0 {
+			warnings = append(warnings, fmt.Sprintf("ignored unreadable line %q (no \":\")", line))
+			continue
+		}
+		key := line[:idx]
+		rawValue := line[idx+1:]
+		first := !seen[key]
+		if !first {
+			warnings = append(warnings, fmt.Sprintf("duplicate key %q, using last occurrence", key))
+		}
+		seen[key] = true
+		if first {
+			t.fieldOrder = append(t.fieldOrder, key)
+		}
+
+		if !coreFields[key] {
+			if i, ok := extraIdx[key]; ok {
+				t.Extra[i].Value = rawValue
+			} else {
+				extraIdx[key] = len(t.Extra)
+				t.Extra = append(t.Extra, Field{Key: key, Value: rawValue})
+			}
+			continue
+		}
+
+		value := strings.TrimLeft(rawValue, " ")
+		switch key {
+		case "id":
+			t.ID = value
+		case "status":
+			t.Status = value
+		case "created":
+			t.Created = value
+		case "type":
+			t.Type = value
+		case "deps":
+			var w string
+			t.Deps, w = parseArrayTolerant(value)
+			if w != "" {
+				warnings = append(warnings, "deps: "+w)
+			}
+		case "links":
+			var w string
+			t.Links, w = parseArrayTolerant(value)
+			if w != "" {
+				warnings = append(warnings, "links: "+w)
+			}
+		case "priority":
+			p, err := strconv.Atoi(value)
+			if err != nil {
+				warnings = append(warnings, fmt.Sprintf("priority: invalid integer %q, defaulted to 2", value))
+				p = 2
+			}
+			t.Priority = p
+		}
+	}
+
+	if t.ID == "" {
+		return nil, warnings, fmt.Errorf("ticket: missing required frontmatter field \"id\"")
+	}
+	if !seen["status"] {
+		warnings = append(warnings, `status: missing, defaulted to ""`)
+	}
+	if !seen["priority"] {
+		t.Priority = 2
+		warnings = append(warnings, "priority: missing, defaulted to 2")
+	}
+	if !seen["deps"] {
+		warnings = append(warnings, "deps: missing, defaulted to []")
+	}
+	if !seen["links"] {
+		warnings = append(warnings, "links: missing, defaulted to []")
+	}
+
+	return t, warnings, nil
+}
+
+// parseArrayTolerant decodes a deps/links value the way bash tk's awk list
+// readers do — `gsub(/[\[\] ]/, "", value)` strips brackets and every
+// space, not just around commas, before splitting on "," and (in ready/
+// blocked's dependency walk) skipping empty elements — so a hand-edited
+// value without brackets ("a,b") or with a stray blank element ("a,,b")
+// parses the same as it would run through bash tk, rather than failing
+// the file the way parseArray (Parse's strict counterpart) does. The
+// returned warning is non-empty whenever raw wasn't "[a, b]" syntax to
+// begin with (including a bare "deps:" with nothing after it — not the
+// same as the field being absent, which the caller warns about
+// separately), even though it still parsed.
+func parseArrayTolerant(raw string) (items []string, warning string) {
+	if !strings.HasPrefix(raw, "[") || !strings.HasSuffix(raw, "]") {
+		warning = fmt.Sprintf("%q not in \"[a, b]\" syntax, parsed leniently", raw)
+	}
+	stripped := strings.Map(func(r rune) rune {
+		if r == '[' || r == ']' || r == ' ' {
+			return -1
+		}
+		return r
+	}, raw)
+	if stripped == "" {
+		return nil, warning
+	}
+	for _, p := range strings.Split(stripped, ",") {
+		if p != "" {
+			items = append(items, p)
+		}
+	}
+	return items, warning
 }
 
 // Bytes renders the ticket back to .tickets/*.md format: the original key

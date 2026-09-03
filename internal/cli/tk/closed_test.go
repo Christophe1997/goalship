@@ -130,6 +130,27 @@ func TestNewClosedCmd_DefaultLimitTwenty(t *testing.T) {
 	}
 }
 
+func TestNewClosedCmd_MissingLinksClosedTicketStillAppears(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("TICKETS_DIR", dir)
+	writeRawTicket(t, dir, "goa-mal4.md",
+		"---\nid: goa-mal4\nstatus: closed\ndeps: []\ncreated: 2026-01-01T00:00:00Z\ntype: task\npriority: 2\n---\n# Closed despite missing links\n")
+
+	cmd := NewClosedCmd()
+	var out, errOut bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&errOut)
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !bytes.Contains(out.Bytes(), []byte("goa-mal4")) {
+		t.Errorf("output missing closed ticket with missing links field, got:\n%s", out.String())
+	}
+	if !bytes.Contains(errOut.Bytes(), []byte("goa-mal4.md")) {
+		t.Errorf("stderr should warn naming the file, got:\n%s", errOut.String())
+	}
+}
+
 func TestNewClosedCmd_AssigneeAndTagFilters(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("TICKETS_DIR", dir)
