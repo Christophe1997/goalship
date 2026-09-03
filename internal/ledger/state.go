@@ -62,6 +62,11 @@ var ticketModes = map[string]bool{TicketModeBranch: true, TicketModeCommit: true
 // "approved" or empty.
 const ReviewStatePending = "pending"
 
+// ReviewStateApproved is the terminal review_state `goalship review` refuses
+// to reopen (R9): once a run's ticket graph is approved, there's nothing
+// left to review.
+const ReviewStateApproved = "approved"
+
 // LedgerDirName exposes ledgerDirName (defined in exclude.go) to callers
 // outside this package — e.g. internal/cli/loop's dirty-tree check, which
 // must exclude this same directory.
