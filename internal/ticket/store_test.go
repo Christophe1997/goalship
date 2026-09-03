@@ -205,6 +205,112 @@ func TestParse_MalformedArrayErrors(t *testing.T) {
 	}
 }
 
+func TestParseTolerant_MissingLinksDefaultsToEmptyAndWarns(t *testing.T) {
+	data := []byte("---\nid: goa-abcd\nstatus: open\ndeps: []\ncreated: 2026-01-01T00:00:00Z\ntype: task\npriority: 1\n---\n# T\n")
+	tk, warnings, err := ParseTolerant(data)
+	if err != nil {
+		t.Fatalf("ParseTolerant: %v", err)
+	}
+	if tk.ID != "goa-abcd" || tk.Status != "open" {
+		t.Errorf("ID/Status = %q/%q, want goa-abcd/open", tk.ID, tk.Status)
+	}
+	if len(tk.Links) != 0 {
+		t.Errorf("Links = %v, want empty", tk.Links)
+	}
+	if !containsSubstring(warnings, "links") {
+		t.Errorf("warnings = %v, want one mentioning links", warnings)
+	}
+}
+
+func TestParseTolerant_NonBracketDepsParsedLeniently(t *testing.T) {
+	data := []byte("---\nid: goa-abcd\nstatus: open\ndeps: goa-1,goa-2\nlinks: []\ncreated: 2026-01-01T00:00:00Z\ntype: task\npriority: 1\n---\nbody\n")
+	tk, warnings, err := ParseTolerant(data)
+	if err != nil {
+		t.Fatalf("ParseTolerant: %v", err)
+	}
+	want := []string{"goa-1", "goa-2"}
+	if !slicesEqual(tk.Deps, want) {
+		t.Errorf("Deps = %v, want %v", tk.Deps, want)
+	}
+	if !containsSubstring(warnings, "deps") {
+		t.Errorf("warnings = %v, want one mentioning deps", warnings)
+	}
+}
+
+func TestParseTolerant_MissingPriorityDefaultsToTwo(t *testing.T) {
+	data := []byte("---\nid: goa-abcd\nstatus: open\ndeps: []\nlinks: []\ncreated: 2026-01-01T00:00:00Z\ntype: task\n---\nbody\n")
+	tk, warnings, err := ParseTolerant(data)
+	if err != nil {
+		t.Fatalf("ParseTolerant: %v", err)
+	}
+	if tk.Priority != 2 {
+		t.Errorf("Priority = %d, want 2 (bash tk's own missing-priority default)", tk.Priority)
+	}
+	if !containsSubstring(warnings, "priority") {
+		t.Errorf("warnings = %v, want one mentioning priority", warnings)
+	}
+}
+
+func TestParseTolerant_MissingStatusDefaultsToEmptyNotOpen(t *testing.T) {
+	// bash tk's awk readers never default a missing status to "open" —
+	// an unmatched /^status:/ just leaves the variable "", which is why
+	// such a ticket still shows in `ls` but never in ready/blocked/closed
+	// (neither check matches ""). ParseTolerant matches that, not the
+	// more convenient-looking "open".
+	data := []byte("---\nid: goa-abcd\ndeps: []\nlinks: []\ncreated: 2026-01-01T00:00:00Z\ntype: task\npriority: 1\n---\nbody\n")
+	tk, warnings, err := ParseTolerant(data)
+	if err != nil {
+		t.Fatalf("ParseTolerant: %v", err)
+	}
+	if tk.Status != "" {
+		t.Errorf("Status = %q, want \"\"", tk.Status)
+	}
+	if !containsSubstring(warnings, "status") {
+		t.Errorf("warnings = %v, want one mentioning status", warnings)
+	}
+}
+
+func TestParseTolerant_MissingIDErrors(t *testing.T) {
+	data := []byte("---\nstatus: open\ndeps: []\nlinks: []\ncreated: 2026-01-01T00:00:00Z\ntype: task\npriority: 1\n---\nbody\n")
+	_, _, err := ParseTolerant(data)
+	if err == nil {
+		t.Fatal("ParseTolerant: want error for missing id, got nil")
+	}
+}
+
+func TestParseTolerant_NoFrontmatterDelimitersErrors(t *testing.T) {
+	_, _, err := ParseTolerant([]byte("# just a markdown file\n\nno frontmatter here\n"))
+	if err == nil {
+		t.Fatal("ParseTolerant: want error for missing frontmatter, got nil")
+	}
+}
+
+func TestParseTolerant_WellFormedTicketProducesNoWarnings(t *testing.T) {
+	data, err := os.ReadFile("testdata/goa-2hib.md")
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+	tk, warnings, err := ParseTolerant(data)
+	if err != nil {
+		t.Fatalf("ParseTolerant: %v", err)
+	}
+	if len(warnings) != 0 {
+		t.Errorf("warnings = %v, want none for a well-formed ticket", warnings)
+	}
+	if tk.ID != "goa-2hib" {
+		t.Errorf("ID = %q, want goa-2hib", tk.ID)
+	}
+}
+
+func containsSubstring(items []string, substr string) bool {
+	for _, item := range items {
+		if strings.Contains(item, substr) {
+			return true
+		}
+	}
+	return false
+}
+
 func TestBytes_FreshTicketUsesCanonicalFieldOrder(t *testing.T) {
 	tk := &Ticket{
 		ID:       "goa-fresh",
