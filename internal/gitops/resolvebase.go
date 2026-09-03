@@ -9,8 +9,11 @@ import (
 )
 
 // hostToolTimeout mirrors branching.py's HOST_TOOL_TIMEOUT_SECONDS = 30,
-// applied to every gh/glab round-trip PRState makes.
-const hostToolTimeout = 30 * time.Second
+// applied to every gh/glab round-trip PRState, FindOpenPRForBranch,
+// CreatePullRequest, and RetargetPullRequest make. A var, not a const, so
+// a test can shrink it (t.Cleanup to restore) to prove a hung fake
+// gh/glab is actually killed without waiting out a real 30s timeout.
+var hostToolTimeout = 30 * time.Second
 
 // DependencyPR is a predecessor ticket's linked PR, as recorded in its own
 // notes — mirrors branching.py's DependencyPR.
