@@ -56,6 +56,15 @@ type Options struct {
 	// real cross-platform implementation (openBrowser) when nil; tests
 	// inject a no-op so they never spawn a real browser process.
 	OpenBrowser func(url string) error
+
+	// DisableWatch skips starting the fsnotify ledger watcher entirely when
+	// true. Zero-value-safe (false runs the watcher normally, matching
+	// every other Options field's convention): there's no meaningful
+	// "custom watcher" a caller would inject, only on/off. This is the only
+	// way to prove the client-side polling fallback works independently of
+	// fsnotify in a real running server, and is not wired to any CLI flag —
+	// Go-level test hook only.
+	DisableWatch bool
 }
 
 // Run acquires runID's review lock, binds an ephemeral loopback port, mints
@@ -103,14 +112,29 @@ func Run(ctx context.Context, opts Options) error {
 		ticketsDir = v
 	}
 
+	broadcaster := newReviewUpdateBroadcaster()
 	state := &apiState{
-		repoRoot:   opts.RepoRoot,
-		runID:      opts.RunID,
-		ticketsDir: ticketsDir,
-		cancel:     cancel,
+		repoRoot:    opts.RepoRoot,
+		runID:       opts.RunID,
+		ticketsDir:  ticketsDir,
+		cancel:      cancel,
+		broadcaster: broadcaster,
+		done:        runCtx.Done(),
 	}
 	handler := newReviewHandler(token, state)
 	srv := &http.Server{Handler: handler}
+
+	// Started unconditionally (barring the test-only DisableWatch escape
+	// hatch) and for the whole session, before srv.Serve ever accepts a
+	// connection — not lazily on first reject — so a regeneration landing
+	// before the first rejection is still picked up. runCtx.Done() is its
+	// own shutdown signal too, so an /api/approve-triggered cancel stops it
+	// alongside the HTTP server, not just SIGINT/SIGTERM.
+	if !opts.DisableWatch {
+		if err := watchLedger(runCtx.Done(), opts.RepoRoot, opts.RunID, broadcaster); err != nil {
+			fmt.Fprintf(stderr, "review: could not watch ledger for live refresh, falling back to polling only: %v\n", err)
+		}
+	}
 
 	url := fmt.Sprintf("http://%s/?token=%s", listener.Addr(), token)
 	fmt.Fprintf(opts.Stdout, "Review server ready: %s\n", url)
