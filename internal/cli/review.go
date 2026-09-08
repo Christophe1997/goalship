@@ -5,23 +5,51 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
 
 	"github.com/spf13/cobra"
 
-	"github.com/Christophe1997/goalship/internal/clistub"
 	"github.com/Christophe1997/goalship/internal/ledger"
+	"github.com/Christophe1997/goalship/internal/reviewserver"
 )
 
 // NewReviewCmd starts the browser-based ticket-graph review checkpoint for
 // a run. Unlike tk/loop, it has no subcommands of its own — <run-id> is a
-// direct argument to a single action.
+// direct argument to a single action. This command owns the
+// existence/already-approved refusal (R9) — it resolves and validates the
+// run before reviewserver.Run ever acquires the lock or binds a port;
+// everything from lock acquisition onward is reviewserver's job.
 func NewReviewCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "review <run-id>",
 		Short: "Open the ticket-graph review checkpoint for a run",
 		Args:  cobra.ExactArgs(1),
-		RunE:  clistub.NotImplemented("review"),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			runID := args[0]
+
+			repoRoot, err := findRepoRoot()
+			if err != nil {
+				return fmt.Errorf("review: %w", err)
+			}
+
+			state, err := loadExistingRunState(repoRoot, runID)
+			if err != nil {
+				return fmt.Errorf("review: %w", err)
+			}
+			if state.ReviewState == ledger.ReviewStateApproved {
+				return fmt.Errorf("review: run %q is already approved, nothing to review", runID)
+			}
+
+			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+			defer stop()
+			return reviewserver.Run(ctx, reviewserver.Options{
+				RepoRoot: repoRoot,
+				RunID:    runID,
+				Stdout:   cmd.OutOrStdout(),
+			})
+		},
 	}
 }
 

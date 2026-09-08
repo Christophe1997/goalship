@@ -156,3 +156,53 @@ func TestReviewStatusCmd_NoGitRepo_ErrorsClearly(t *testing.T) {
 		t.Fatal("execute: want an error when no git repository is found, got nil")
 	}
 }
+
+// execReview runs `goalship review <args>` and returns combined
+// stdout+stderr and the command's error. Only the two refusal paths below
+// belong in this package's test suite — a run that actually reaches
+// reviewserver.Run would bind a listener and block on ctx.Done(), which
+// has no place in a fast unit-test suite.
+func execReview(t *testing.T, args []string) (string, error) {
+	t.Helper()
+	cmd := NewReviewCmd()
+	buf := &bytes.Buffer{}
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs(args)
+	err := cmd.Execute()
+	return buf.String(), err
+}
+
+func TestReviewCmd_MissingRunID_RefusesWithClearError(t *testing.T) {
+	newReviewTestRepo(t) // a real repo root, but no ledger ever written
+
+	_, err := execReview(t, []string{"no-such-run"})
+	if err == nil {
+		t.Fatal("execute: want an error for a run-id with no ledger file, got nil")
+	}
+}
+
+func TestReviewCmd_NoGitRepo_RefusesWithClearError(t *testing.T) {
+	t.Cleanup(chdir(t, t.TempDir()))
+
+	_, err := execReview(t, []string{"whatever"})
+	if err == nil {
+		t.Fatal("execute: want an error when no git repository is found, got nil")
+	}
+}
+
+func TestReviewCmd_AlreadyApprovedRun_RefusesWithClearError(t *testing.T) {
+	repoRoot := newReviewTestRepo(t)
+	state := &ledger.RunState{RunID: "run-approved", ReviewState: ledger.ReviewStateApproved}
+	if err := state.Save(repoRoot); err != nil {
+		t.Fatalf("save fixture ledger: %v", err)
+	}
+
+	_, err := execReview(t, []string{"run-approved"})
+	if err == nil {
+		t.Fatal("execute: want an error for an already-approved run, got nil")
+	}
+	if !strings.Contains(err.Error(), "run-approved") || !strings.Contains(err.Error(), "approved") {
+		t.Errorf("error = %q, want it to name the run id and mention it's already approved", err.Error())
+	}
+}
