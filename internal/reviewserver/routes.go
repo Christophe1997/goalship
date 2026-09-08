@@ -5,18 +5,14 @@ import (
 	"net/http"
 )
 
-// registerRoutes wires the review server's routes onto mux. Real
-// ticket-graph data routes (CRUD, reject/withdraw/approve) are ticket
-// U8B's job — the one placeholder below exists only to make the
-// mutating-Host-check middleware independently testable here.
+// registerRoutes wires the review server's index/asset routes onto mux.
+// Ticket-graph data routes (GET/PATCH /api/tickets, reject/withdraw/
+// approve) are registered separately by api.go's registerAPIRoutes, onto
+// the same mux, from newReviewHandler.
 func registerRoutes(mux *http.ServeMux, token string) {
 	mux.HandleFunc("GET /{$}", indexHandler(token))
 	mux.Handle("GET /app.js", staticAsset("assets/app.js", "text/javascript; charset=utf-8"))
 	mux.Handle("GET /app.css", staticAsset("assets/app.css", "text/css; charset=utf-8"))
-
-	mux.HandleFunc("POST /api/_stub", func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, "not implemented", http.StatusNotImplemented)
-	})
 }
 
 // indexHandler templates index.html per request, interpolating the live

@@ -71,7 +71,7 @@ func TestHostCheck_MutatingRequest_WrongHost_Rejected(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			handlerRan = false
-			req := httptest.NewRequest("POST", "/api/_stub", nil)
+			req := httptest.NewRequest("POST", "/api/withdraw", nil)
 			req.Host = tc.host
 			rec := httptest.NewRecorder()
 			h.ServeHTTP(rec, req)
@@ -96,7 +96,7 @@ func TestHostCheck_MutatingRequest_LocalHost_Allowed(t *testing.T) {
 			inner := okHandler(&handlerRan)
 			h := hostCheck(inner)
 
-			req := httptest.NewRequest("POST", "/api/_stub", nil)
+			req := httptest.NewRequest("POST", "/api/withdraw", nil)
 			req.Host = host
 			rec := httptest.NewRecorder()
 			h.ServeHTTP(rec, req)
@@ -162,29 +162,46 @@ func assertSecurityHeaders(t *testing.T, rec *httptest.ResponseRecorder) {
 	}
 }
 
-// TestMutatingStub_ValidTokenAndHost_Returns501 discriminates the Host
-// check from the token check: a valid token plus an allowed Host must reach
-// the placeholder mutating route (which itself always answers 501), proving
-// hostCheck's earlier "wrong Host" rejections above weren't actually caused
-// by a token failure.
-func TestMutatingStub_ValidTokenAndHost_Returns501(t *testing.T) {
-	h := newHandler(testToken)
+// testAPIState builds an apiState safe for a security_test.go request that
+// is expected to actually reach a real handler: a fresh t.TempDir() for
+// both repoRoot and ticketsDir (never the process cwd — see apiState's own
+// doc), and a non-nil no-op cancel (handleApprove calls it unconditionally;
+// only tests that exercise approve itself need a real one).
+func testAPIState(t *testing.T) *apiState {
+	t.Helper()
+	dir := t.TempDir()
+	return &apiState{
+		repoRoot:   dir,
+		runID:      "run-a",
+		ticketsDir: dir,
+		cancel:     func() {},
+	}
+}
 
-	req := httptest.NewRequest("POST", "/api/_stub?token="+testToken, nil)
+// TestAPIRoute_ValidTokenAndHost_Reached discriminates the Host check from
+// the token check: a valid token plus an allowed Host must reach a real
+// mutating route (POST /api/withdraw, standing in for "any of goa-4ufc's
+// routes" per hostCheck's method-based, path-agnostic enforcement) and
+// succeed, proving hostCheck's earlier "wrong Host" rejections above
+// weren't actually caused by a token failure.
+func TestAPIRoute_ValidTokenAndHost_Reached(t *testing.T) {
+	h := newReviewHandler(testToken, testAPIState(t))
+
+	req := httptest.NewRequest("POST", "/api/withdraw?token="+testToken, nil)
 	req.Host = "127.0.0.1"
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
-	if rec.Code != 501 {
-		t.Errorf("status = %d, want 501", rec.Code)
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d; body: %s", rec.Code, http.StatusOK, rec.Body.String())
 	}
 	assertSecurityHeaders(t, rec)
 }
 
-func TestMutatingStub_ValidTokenWrongHost_Rejected(t *testing.T) {
-	h := newHandler(testToken)
+func TestAPIRoute_ValidTokenWrongHost_Rejected(t *testing.T) {
+	h := newReviewHandler(testToken, testAPIState(t))
 
-	req := httptest.NewRequest("POST", "/api/_stub?token="+testToken, nil)
+	req := httptest.NewRequest("POST", "/api/withdraw?token="+testToken, nil)
 	req.Host = "evil.example.com"
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
