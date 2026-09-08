@@ -69,10 +69,25 @@ type Ticket struct {
 // the body) is not special: only the first two delimit the frontmatter.
 var frontmatterDelim = regexp.MustCompile(`(?m)^---$`)
 
+// normalizeLineEndings converts CRLF to bare LF. frontmatterDelim (and
+// every other line-oriented pattern/split in this package) anchors on a
+// bare "\n", so an unnormalized "---\r\n" line — plausible via git's
+// core.autocrlf=true, or a CRLF-default editor — wouldn't match it at all,
+// hard-failing an otherwise well-formed file with "no frontmatter
+// delimiters found". Parse and ParseTolerant both call this once, up
+// front, on the same string they use for every subsequent offset — never
+// partially, or the two would disagree on where things are.
+func normalizeLineEndings(s string) string {
+	return strings.ReplaceAll(s, "\r\n", "\n")
+}
+
 // splitFrontmatter locates s's frontmatter fence, shared by Parse and
 // ParseTolerant: both must agree on where the frontmatter ends and the
 // body begins before they can diverge on how strictly to read the fields
-// between.
+// between. s must already have CRLF line endings normalized to bare "\n"
+// (normalizeLineEndings) — every offset this function returns is relative
+// to whatever string the caller passes in, and the caller reuses that same
+// string afterward.
 func splitFrontmatter(s string) (fmStart, fmEnd int, body string, err error) {
 	locs := frontmatterDelim.FindAllStringIndex(s, -1)
 	if len(locs) < 2 || locs[0][0] != 0 {
@@ -102,7 +117,7 @@ func splitFrontmatter(s string) (fmStart, fmEnd int, body string, err error) {
 // breaking the byte-identical round-trip R8 and the acceptance criteria
 // require.
 func Parse(data []byte) (*Ticket, error) {
-	s := string(data)
+	s := normalizeLineEndings(string(data))
 	fmStart, fmEnd, body, err := splitFrontmatter(s)
 	if err != nil {
 		return nil, err
@@ -212,7 +227,7 @@ func Load(path string) (*Ticket, error) {
 // first-occurrence-wins field order incorrectly. Callers only ever
 // project it into a read-only view (see internal/cli/tk's ticketInfo).
 func ParseTolerant(data []byte) (*Ticket, []string, error) {
-	s := string(data)
+	s := normalizeLineEndings(string(data))
 	fmStart, fmEnd, body, err := splitFrontmatter(s)
 	if err != nil {
 		return nil, nil, err

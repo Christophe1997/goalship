@@ -158,6 +158,31 @@ func TestParse_MissingFrontmatterDelimitersErrors(t *testing.T) {
 	}
 }
 
+// TestParse_CRLFLineEndings_ParsesSuccessfully proves a ticket file with
+// CRLF line endings (plausible via git's core.autocrlf=true, or a
+// CRLF-default editor) parses correctly instead of erroring with "no
+// frontmatter delimiters found" — splitFrontmatter's delimiter regex
+// anchors on a bare "\n", so an unnormalized "---\r\n" line wouldn't match
+// it at all.
+func TestParse_CRLFLineEndings_ParsesSuccessfully(t *testing.T) {
+	lf := "---\nid: goa-crlf\nstatus: open\ndeps: []\nlinks: []\ncreated: 2026-01-01T00:00:00Z\ntype: task\npriority: 2\n---\n# Title\n\nBody text.\n"
+	crlf := strings.ReplaceAll(lf, "\n", "\r\n")
+
+	tk, err := Parse([]byte(crlf))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if tk.ID != "goa-crlf" {
+		t.Errorf("ID = %q, want goa-crlf", tk.ID)
+	}
+	if tk.Status != "open" {
+		t.Errorf("Status = %q, want open", tk.Status)
+	}
+	if !strings.HasPrefix(tk.Body, "# Title") {
+		t.Errorf("Body = %q, want prefix %q", tk.Body, "# Title")
+	}
+}
+
 func TestParse_MissingRequiredFieldErrors(t *testing.T) {
 	_, err := Parse([]byte("---\nid: goa-abcd\nstatus: open\n---\nbody\n"))
 	if err == nil {

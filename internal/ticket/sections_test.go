@@ -88,7 +88,10 @@ func TestSetTitle_OnlyTitleLineChanges(t *testing.T) {
 // title/description block AND the trailing "## Notes" section — bytes both
 // before and after the edited range — byte-identical.
 func TestSetSection_EditsOnlyThatSection(t *testing.T) {
-	got := SetSection(exampleSectionsBody, "Acceptance Criteria", "- new criterion")
+	got, err := SetSection(exampleSectionsBody, "Acceptance Criteria", "- new criterion")
+	if err != nil {
+		t.Fatalf("SetSection: %v", err)
+	}
 
 	acStart := indexOf(t, exampleSectionsBody, "## Acceptance Criteria")
 	notesStart := indexOf(t, exampleSectionsBody, "## Notes")
@@ -117,7 +120,10 @@ func TestSetSection_EditsOnlyThatSection(t *testing.T) {
 // heading is appended after every existing section, with existing sections
 // left byte-unchanged.
 func TestSetSection_AppendsWhenAbsent(t *testing.T) {
-	got := SetSection(exampleSectionsBody, "Blockers", "None yet.")
+	got, err := SetSection(exampleSectionsBody, "Blockers", "None yet.")
+	if err != nil {
+		t.Fatalf("SetSection: %v", err)
+	}
 
 	if got[:len(exampleSectionsBody)] != exampleSectionsBody {
 		t.Errorf("existing bytes changed on append:\ngot:  %q\nwant prefix: %q", got[:len(exampleSectionsBody)], exampleSectionsBody)
@@ -147,8 +153,14 @@ func TestRoundTrip_SameValues_ByteIdentical(t *testing.T) {
 	title, description, sections, _ := ParseSections(exampleSectionsBody)
 
 	got := SetTitle(exampleSectionsBody, title)
-	got = SetDescription(got, description)
-	got = SetSection(got, "Acceptance Criteria", sections["Acceptance Criteria"])
+	got, err := SetDescription(got, description)
+	if err != nil {
+		t.Fatalf("SetDescription: %v", err)
+	}
+	got, err = SetSection(got, "Acceptance Criteria", sections["Acceptance Criteria"])
+	if err != nil {
+		t.Fatalf("SetSection: %v", err)
+	}
 
 	if got != exampleSectionsBody {
 		t.Errorf("round-trip with unchanged values produced different bytes:\ngot:  %q\nwant: %q", got, exampleSectionsBody)
@@ -157,9 +169,61 @@ func TestRoundTrip_SameValues_ByteIdentical(t *testing.T) {
 
 func TestSetDescription_EmptyBecomesSingleBlankLine(t *testing.T) {
 	body := "# Title\n\n## Notes\n\ncontent\n\n"
-	got := SetDescription(body, "")
+	got, err := SetDescription(body, "")
+	if err != nil {
+		t.Fatalf("SetDescription: %v", err)
+	}
 	if got != body {
 		t.Errorf("SetDescription with the already-empty value changed bytes:\ngot:  %q\nwant: %q", got, body)
+	}
+}
+
+// TestSetSection_RejectsContentContainingSectionHeadingLine proves a
+// section-heading-shaped line inside content is refused up front instead of
+// being silently swallowed as a bogus new section on the next read — see
+// sections.go's SetSection doc comment for why an unchecked write would
+// corrupt the very next ParseSections call.
+func TestSetSection_RejectsContentContainingSectionHeadingLine(t *testing.T) {
+	_, err := SetSection(exampleSectionsBody, "Acceptance Criteria", "- criterion one\n## Done\n- criterion two")
+	if err == nil {
+		t.Fatal("SetSection: want an error for content containing a \"## \" line, got nil")
+	}
+}
+
+// TestSetDescription_RejectsContentContainingSectionHeadingLine mirrors
+// TestSetSection_RejectsContentContainingSectionHeadingLine for
+// descriptionSpan's identical "## " boundary.
+func TestSetDescription_RejectsContentContainingSectionHeadingLine(t *testing.T) {
+	_, err := SetDescription(exampleSectionsBody, "intro\n## Sneaky\nmore text")
+	if err == nil {
+		t.Fatal("SetDescription: want an error for a description containing a \"## \" line, got nil")
+	}
+}
+
+// TestParseSections_DuplicateHeaders_FirstOccurrenceWins proves a
+// duplicated "## " heading (only reachable via a hand-edited file —
+// SetSection never produces one, see TestSetSection_EditsOnlyThatSection)
+// reports the first occurrence's content, matching SetSection's own
+// first-occurrence edit target: otherwise a successful SetSection edit of
+// the first occurrence would stay invisible to every subsequent read.
+func TestParseSections_DuplicateHeaders_FirstOccurrenceWins(t *testing.T) {
+	body := "# Title\n\n## Notes\n\nfirst.\n\n## Notes\n\nsecond.\n\n"
+
+	_, _, sections, order := ParseSections(body)
+	if got := sections["Notes"]; got != "first." {
+		t.Errorf("sections[Notes] = %q, want %q (first occurrence)", got, "first.")
+	}
+	if len(order) != 1 || order[0] != "Notes" {
+		t.Errorf("order = %v, want [Notes] (once)", order)
+	}
+
+	edited, err := SetSection(body, "Notes", "EDITED.")
+	if err != nil {
+		t.Fatalf("SetSection: %v", err)
+	}
+	_, _, sections, _ = ParseSections(edited)
+	if got := sections["Notes"]; got != "EDITED." {
+		t.Errorf("after SetSection, sections[Notes] = %q, want %q — edit of the first occurrence must be visible", got, "EDITED.")
 	}
 }
 

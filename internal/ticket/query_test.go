@@ -131,6 +131,63 @@ func TestQuery_SelectFiltersByField(t *testing.T) {
 	}
 }
 
+// TestQuery_BareFilter_WrappedInSelect proves a bare condition — the
+// natural way bash tk's own users write a filter, per Query's own doc
+// comment ("mirroring bash tk's cmd_query: jq -c \"select($filter)\"") —
+// filters tickets instead of literally evaluating to a bare true/false
+// line for every ticket.
+func TestQuery_BareFilter_WrappedInSelect(t *testing.T) {
+	dir := t.TempDir()
+	writeMini := func(name, id, status string) {
+		data := "---\nid: " + id + "\nstatus: " + status + "\ndeps: []\nlinks: []\ncreated: 2026-01-01T00:00:00Z\ntype: task\npriority: 2\n---\n# T\n"
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(data), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeMini("a.md", "id-a", "open")
+	writeMini("b.md", "id-b", "in_progress")
+
+	lines, err := Query(dir, `.status=="in_progress"`)
+	if err != nil {
+		t.Fatalf("Query: %v", err)
+	}
+	if len(lines) != 1 {
+		t.Fatalf("len(lines) = %d, want 1: %v", len(lines), lines)
+	}
+	if !strings.Contains(string(lines[0]), `"id":"id-b"`) {
+		t.Errorf("lines[0] = %s, want id-b's full ticket JSON, not a bare true/false", lines[0])
+	}
+}
+
+// TestQuery_OneTicketErrors_OthersStillMatch proves a jq runtime error
+// against one ticket (e.g. a filter field that ticket doesn't have) skips
+// just that ticket instead of aborting the whole query and discarding a
+// genuine match found in another ticket — mirrors real jq's own per-input
+// error isolation.
+func TestQuery_OneTicketErrors_OthersStillMatch(t *testing.T) {
+	dir := t.TempDir()
+	// a.md has no "assignee" field at all: ascii_downcase(null) errors.
+	noAssignee := "---\nid: id-a\nstatus: open\ndeps: []\nlinks: []\ncreated: 2026-01-01T00:00:00Z\ntype: task\npriority: 2\n---\n# T\n"
+	if err := os.WriteFile(filepath.Join(dir, "a.md"), []byte(noAssignee), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	withAssignee := "---\nid: id-b\nstatus: open\ndeps: []\nlinks: []\ncreated: 2026-01-01T00:00:00Z\ntype: task\npriority: 2\nassignee: bob\n---\n# T\n"
+	if err := os.WriteFile(filepath.Join(dir, "b.md"), []byte(withAssignee), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	lines, err := Query(dir, `.assignee | ascii_downcase == "bob"`)
+	if err != nil {
+		t.Fatalf("Query: %v", err)
+	}
+	if len(lines) != 1 {
+		t.Fatalf("len(lines) = %d, want 1 (id-b's match must survive id-a's jq error): %v", len(lines), lines)
+	}
+	if !strings.Contains(string(lines[0]), `"id":"id-b"`) {
+		t.Errorf("lines[0] = %s, want id-b", lines[0])
+	}
+}
+
 // TestQuery_ParityWithBashTk compares this package's Query against the
 // real installed bash tk 0.3.2 binary on this repo's own .tickets/ (read
 // only — query never mutates), for the three filter shapes goalship's
@@ -150,7 +207,15 @@ func TestQuery_ParityWithBashTk(t *testing.T) {
 		t.Skipf("no .tickets dir at %s; skipping parity test", ticketsDir)
 	}
 
-	for _, filter := range []string{".", `select(.status=="in_progress")`, `select(.id=="goa-g7ei")`} {
+	for _, filter := range []string{
+		".",
+		`select(.status=="in_progress")`,
+		`select(.id=="goa-g7ei")`,
+		".id",
+		"{id, status}",
+		".deps[]",
+		`select(.status=="open") | .id`,
+	} {
 		t.Run(filter, func(t *testing.T) {
 			cmd := exec.Command(tkPath, "query", filter)
 			cmd.Dir = repoRoot

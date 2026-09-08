@@ -188,7 +188,7 @@ func Query(ticketsDir, filter string) ([][]byte, error) {
 	if filter == "" {
 		filter = "."
 	}
-	q, err := gojq.Parse(filter)
+	q, err := gojq.Parse("select(" + filter + ")")
 	if err != nil {
 		return nil, fmt.Errorf("ticket: query: parse filter %q: %w", filter, err)
 	}
@@ -210,8 +210,15 @@ func Query(ticketsDir, filter string) ([][]byte, error) {
 			if !ok {
 				break
 			}
-			if e, isErr := v.(error); isErr {
-				return nil, fmt.Errorf("ticket: query: %w", e)
+			// A jq runtime error (e.g. a filter field this ticket doesn't
+			// have) only invalidates this one ticket's result, mirroring
+			// real jq's own per-input error isolation: it prints a
+			// diagnostic and moves to the next input rather than aborting
+			// the whole run. Aborting here would silently discard a
+			// genuine match already found in, or still to come from, any
+			// other ticket.
+			if _, isErr := v.(error); isErr {
+				break
 			}
 			b, err := encodeOrdered(v, order)
 			if err != nil {

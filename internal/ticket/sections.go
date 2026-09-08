@@ -15,6 +15,7 @@
 package ticket
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 )
@@ -102,7 +103,12 @@ func sectionSpans(body string) []sectionSpan {
 // ParseSections extracts a ticket body's title, description, and named
 // "## " sections, in the order they first appear. Values are trimmed of
 // surrounding blank lines — the whitespace that separates blocks in
-// buildCreateBody's own layout (see create.go), not meaningful content.
+// buildCreateBody's own layout (see create.go), not meaningful content. A
+// duplicated heading (only possible in a hand-edited file — SetSection
+// never produces one) reports its first occurrence, matching SetSection's
+// own first-occurrence edit target: a read must agree with what a write
+// would change, or an edit could land on one occurrence while every reader
+// keeps reporting another's stale content.
 func ParseSections(body string) (title, description string, sections map[string]string, order []string) {
 	if _, _, text, found := titleSpan(body); found {
 		title = text
@@ -113,9 +119,10 @@ func ParseSections(body string) (title, description string, sections map[string]
 
 	sections = make(map[string]string)
 	for _, sp := range sectionSpans(body) {
-		if _, exists := sections[sp.name]; !exists {
-			order = append(order, sp.name)
+		if _, exists := sections[sp.name]; exists {
+			continue
 		}
+		order = append(order, sp.name)
 		sections[sp.name] = strings.TrimSpace(body[sp.contentStart:sp.end])
 	}
 	return title, description, sections, order
@@ -140,13 +147,22 @@ func SetTitle(body, title string) string {
 // "%s\n\n" appends a description plus its own trailing blank line). A
 // round-trip with the exact value ParseSections returned reproduces the
 // original bytes, since that's the same convention already on disk.
-func SetDescription(body, description string) string {
+//
+// description must not contain a line starting with "## ": descriptionSpan
+// (the same helper ParseSections reads with) treats any such line as the
+// start of the next section, so writing one in unchanged would silently
+// truncate the description on every subsequent read. Rejecting it here
+// turns that into a loud, immediate error instead of quiet data loss.
+func SetDescription(body, description string) (string, error) {
+	if sectionLineRe.MatchString(description) {
+		return "", fmt.Errorf("ticket: description contains a line starting with \"## \", which would be read back as a new section heading")
+	}
 	start, end := descriptionSpan(body)
 	block := "\n"
 	if description != "" {
 		block = "\n" + description + "\n\n"
 	}
-	return body[:start] + block + body[end:]
+	return body[:start] + block + body[end:], nil
 }
 
 // SetSection replaces the named "## " section's full range (heading plus
@@ -155,19 +171,28 @@ func SetDescription(body, description string) string {
 // that name yet — per this package's own choice of ordering (title/
 // description first, then sections, matching buildCreateBody), a new
 // section always lands after every existing one.
-func SetSection(body, name, content string) string {
+//
+// content must not contain a line starting with "## ": sectionSpans (the
+// same helper ParseSections reads with) treats any such line as the start
+// of the next section, so writing one in unchanged would silently truncate
+// this section on every subsequent read. Rejecting it here turns that into
+// a loud, immediate error instead of quiet data loss.
+func SetSection(body, name, content string) (string, error) {
+	if sectionLineRe.MatchString(content) {
+		return "", fmt.Errorf("ticket: section %q content contains a line starting with \"## \", which would be read back as a new section heading", name)
+	}
 	block := "## " + name + "\n\n" + content + "\n\n"
 
 	for _, sp := range sectionSpans(body) {
 		if sp.name != name {
 			continue
 		}
-		return body[:sp.headingStart] + block + body[sp.end:]
+		return body[:sp.headingStart] + block + body[sp.end:], nil
 	}
 
 	trimmed := strings.TrimRight(body, "\n")
 	if trimmed == "" {
-		return block
+		return block, nil
 	}
-	return trimmed + "\n\n" + block
+	return trimmed + "\n\n" + block, nil
 }
