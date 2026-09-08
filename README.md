@@ -3,17 +3,23 @@
 A single Go CLI that replaces bash `tk` ([wedow/ticket](https://github.com/wedow/ticket))
 and goalship's Python `loop_runner.py` as the mechanics behind the goal-to-PR
 execution loop: ticket tracking (`goalship tk`), git/gh loop mechanics
-(`goalship loop`), and a terminal-wizard review checkpoint (`goalship review`)
+(`goalship loop`), and a browser-based review checkpoint (`goalship review`)
 where the decomposed ticket graph is edited and approved — or rejected with
 notes for revision — before any ticket starts executing.
 
-`goalship` runs no server or other persistent listening process; the wizard
-and the orchestrating agent coordinate entirely by reading and atomically
-writing the run's ledger under `.goalship/`.
+`goalship review`'s checkpoint is the one exception to "no persistent
+process": it runs a loopback-only HTTP server for the lifetime of a single
+invocation (token-gated, live-refreshed over SSE), then exits once you
+approve, reject, or withdraw. Outside of that, `goalship` and the
+orchestrating agent coordinate entirely by reading and atomically writing
+the run's ledger under `.goalship/`.
 
 ## Status
 
-Pre-implementation. The full product and technical design lives in
+Implemented. Every `tk` command, every `loop_runner.py` subcommand, and the
+`review`/`review-status` checkpoint have shipped (see the closed tickets
+under [`.tickets/`](.tickets/)). The full product and technical design that
+drove the build lives in
 [`docs/plans/2026-08-27-2010-feat-goalship-cli-plan.md`](docs/plans/2026-08-27-2010-feat-goalship-cli-plan.md).
 
 ## Prerequisites
