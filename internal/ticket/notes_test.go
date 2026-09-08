@@ -6,28 +6,33 @@ import (
 	"testing"
 )
 
-func TestAppendNote_InsertsHeadingWhenAbsent(t *testing.T) {
-	got := AppendNote("", "hello world")
-	if !regexp.MustCompile(`^\n## Notes\n\n\*\*[^*]+\*\*\n\nhello world\n$`).MatchString(got) {
-		t.Fatalf("unexpected note block, got: %q", got)
+func TestTicket_AddNote_AppendsNotesHeadingWhenMissing(t *testing.T) {
+	tk := &Ticket{Body: "\n"}
+	tk.AddNote("hello world")
+
+	if !regexp.MustCompile(`\n## Notes\n\n\*\*[^*]+\*\*\n\nhello world\n$`).MatchString(tk.Body) {
+		t.Fatalf("unexpected body: %q", tk.Body)
 	}
 }
 
-func TestAppendNote_SecondCallDoesNotDuplicateHeading(t *testing.T) {
-	body := AppendNote("", "first")
-	body = AppendNote(body, "second")
+func TestTicket_AddNote_SecondNoteDoesNotDuplicateHeading(t *testing.T) {
+	tk := &Ticket{}
+	tk.AddNote("first")
+	tk.AddNote("second")
 
-	if n := strings.Count(body, "## Notes"); n != 1 {
-		t.Fatalf("## Notes heading count = %d, want 1; content:\n%s", n, body)
+	if n := strings.Count(tk.Body, "## Notes"); n != 1 {
+		t.Fatalf("## Notes heading count = %d, want 1; body:\n%s", n, tk.Body)
 	}
-	if !strings.Contains(body, "first") || !strings.Contains(body, "second") {
-		t.Fatalf("both notes not present:\n%s", body)
+	if !strings.Contains(tk.Body, "first") || !strings.Contains(tk.Body, "second") {
+		t.Fatalf("both notes not present:\n%s", tk.Body)
 	}
 }
 
-func TestAppendNote_PreservesExistingBodyBeforeHeading(t *testing.T) {
-	got := AppendNote("# Ticket\n\nSome description.\n", "a note")
-	if !strings.HasPrefix(got, "# Ticket\n\nSome description.\n\n## Notes\n") {
-		t.Fatalf("existing body not preserved before the heading, got:\n%s", got)
+func TestTicket_AddNote_MultilineKeyValueTextRoundTrips(t *testing.T) {
+	tk := &Ticket{}
+	tk.AddNote("branch: feat/x\npr: https://example.com/pull/1\nsha: deadbeef")
+
+	if !strings.Contains(tk.Body, "branch: feat/x\npr: https://example.com/pull/1\nsha: deadbeef\n") {
+		t.Errorf("note text not found verbatim in body:\n%s", tk.Body)
 	}
 }

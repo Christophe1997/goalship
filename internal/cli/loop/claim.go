@@ -99,6 +99,6 @@ func recordClaimNote(repoRoot, ticketID, branchName, baseRef, trunkBranch, claim
 	if err != nil {
 		return err
 	}
-	t.Body = ticket.AppendNote(t.Body, strings.Join(lines, "\n"))
+	t.AddNote(strings.Join(lines, "\n"))
 	return t.Save(path)
 }

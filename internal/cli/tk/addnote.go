@@ -11,8 +11,9 @@ import (
 	"github.com/Christophe1997/goalship/internal/ticket"
 )
 
-// runAddNote is cmd_add_note's Go core: resolve id, then append a
-// timestamped note block via ticket.AppendNote and save.
+// runAddNote is cmd_add_note's Go core: resolve id and delegate the
+// heading/timestamp formatting to ticket.Ticket.AddNote (shared with `loop
+// ship`'s closing note) before saving.
 func runAddNote(ticketsDir, id, note string) (string, error) {
 	path, err := ticket.Resolve(ticketsDir, id)
 	if err != nil {
@@ -23,7 +24,7 @@ func runAddNote(ticketsDir, id, note string) (string, error) {
 		return "", fmt.Errorf("tk add-note: %w", err)
 	}
 
-	t.Body = ticket.AppendNote(t.Body, note)
+	t.AddNote(note)
 
 	if err := t.Save(path); err != nil {
 		return "", fmt.Errorf("tk add-note: %w", err)
