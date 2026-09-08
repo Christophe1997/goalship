@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Christophe1997/goalship/internal/ledger"
@@ -48,6 +49,39 @@ type apiState struct {
 	// srv.Shutdown for the full shutdownTimeout with a live SSE connection
 	// still open.
 	done <-chan struct{}
+
+	// ledgerMu serializes withLedgerLock's load-mutate-save critical
+	// section across goroutines. net/http dispatches each request on its
+	// own goroutine, and the review UI enables Approve and Reject
+	// simultaneously whenever review_state is pending, so an ordinary
+	// double-click fires two of handleReject/handleWithdraw/handleApprove
+	// concurrently. Without this, each would load its own stale
+	// pre-mutation snapshot and save its own full copy back, silently
+	// discarding whichever one didn't save last — both requests still
+	// return 200 OK. Zero value is a ready-to-use unlocked mutex, matching
+	// every other field's zero-value-safe convention here.
+	ledgerMu sync.Mutex
+}
+
+// withLedgerLock loads runID's ledger, runs mutate against it while holding
+// ledgerMu (see that field's doc comment), and saves the result — the
+// shared, atomic load-mutate-save sequence handleReject, handleWithdraw,
+// and handleApprove each need. Because the whole sequence is one critical
+// section, a second concurrent caller's Load always observes the first
+// caller's completed Save, never an interleaved, stale copy of it.
+func (s *apiState) withLedgerLock(mutate func(*ledger.RunState)) (*ledger.RunState, error) {
+	s.ledgerMu.Lock()
+	defer s.ledgerMu.Unlock()
+
+	runState, err := ledger.LoadRunState(s.repoRoot, s.runID)
+	if err != nil {
+		return nil, err
+	}
+	mutate(runState)
+	if err := runState.Save(s.repoRoot); err != nil {
+		return nil, err
+	}
+	return runState, nil
 }
 
 // registerAPIRoutes wires goa-4ufc's and goa-7cxd's routes onto mux.
@@ -124,6 +158,15 @@ func orEmpty(s []string) []string {
 // of vanishing, matching tk ls's own graceful-degradation behavior. The
 // returned Ticket must never be Save'd (ParseTolerant's own contract) —
 // listing only ever projects it into ticketJSON, never writes it back.
+//
+// A single file that fails to read (a real TOCTOU: os.ReadDir lists it,
+// then a concurrent process — an agent regenerating the ticket graph after
+// a rejection, while this server stays up — deletes or replaces it before
+// os.ReadFile gets to it) or fails ParseTolerant is skipped, not treated
+// as a reason to fail the whole listing: only that one ticket goes
+// missing from the result, matching this function's own graceful-
+// degradation contract above instead of turning one racy file into a 500
+// for every connected reviewer.
 func listTickets(ticketsDir string) ([]ticketJSON, error) {
 	entries, err := os.ReadDir(ticketsDir)
 	if err != nil {
@@ -137,11 +180,11 @@ func listTickets(ticketsDir string) ([]ticketJSON, error) {
 		}
 		data, err := os.ReadFile(filepath.Join(ticketsDir, e.Name()))
 		if err != nil {
-			return nil, fmt.Errorf("reviewserver: list tickets: %w", err)
+			continue
 		}
 		t, _, err := ticket.ParseTolerant(data)
 		if err != nil {
-			return nil, fmt.Errorf("reviewserver: list tickets: %s: %w", e.Name(), err)
+			continue
 		}
 		tickets = append(tickets, ticketJSONFrom(t))
 	}
@@ -250,10 +293,20 @@ func (s *apiState) handlePatchTicket(w http.ResponseWriter, r *http.Request) {
 		t.Body = ticket.SetTitle(t.Body, *patch.Title)
 	}
 	if patch.Description != nil {
-		t.Body = ticket.SetDescription(t.Body, *patch.Description)
+		body, err := ticket.SetDescription(t.Body, *patch.Description)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		t.Body = body
 	}
 	if patch.AcceptanceCriteria != nil {
-		t.Body = ticket.SetSection(t.Body, acceptanceCriteriaSection, *patch.AcceptanceCriteria)
+		body, err := ticket.SetSection(t.Body, acceptanceCriteriaSection, *patch.AcceptanceCriteria)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		t.Body = body
 	}
 	if patch.Priority != nil {
 		t.Priority = *patch.Priority
@@ -285,15 +338,12 @@ func (s *apiState) handleReject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	runState, err := ledger.LoadRunState(s.repoRoot, s.runID)
+	runState, err := s.withLedgerLock(func(rs *ledger.RunState) {
+		rs.ReviewState = ledger.ReviewStateRejected
+		rs.ReviewNotes = req.Notes
+		rs.ReviewUpdatedAt = nowStamp()
+	})
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	runState.ReviewState = ledger.ReviewStateRejected
-	runState.ReviewNotes = req.Notes
-	runState.ReviewUpdatedAt = nowStamp()
-	if err := runState.Save(s.repoRoot); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -305,15 +355,12 @@ func (s *apiState) handleReject(w http.ResponseWriter, r *http.Request) {
 // ReviewNotes is cleared: stale rejection notes on a "pending, no decision"
 // state would misreport to review-status callers.
 func (s *apiState) handleWithdraw(w http.ResponseWriter, r *http.Request) {
-	runState, err := ledger.LoadRunState(s.repoRoot, s.runID)
+	runState, err := s.withLedgerLock(func(rs *ledger.RunState) {
+		rs.ReviewState = ledger.ReviewStatePending
+		rs.ReviewNotes = ""
+		rs.ReviewUpdatedAt = nowStamp()
+	})
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	runState.ReviewState = ledger.ReviewStatePending
-	runState.ReviewNotes = ""
-	runState.ReviewUpdatedAt = nowStamp()
-	if err := runState.Save(s.repoRoot); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -337,15 +384,12 @@ func (s *apiState) handleApprove(w http.ResponseWriter, r *http.Request) {
 		ids[i] = t.ID
 	}
 
-	runState, err := ledger.LoadRunState(s.repoRoot, s.runID)
+	runState, err := s.withLedgerLock(func(rs *ledger.RunState) {
+		rs.ReviewState = ledger.ReviewStateApproved
+		rs.ApprovedTicketIDs = ids
+		rs.ReviewUpdatedAt = nowStamp()
+	})
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	runState.ReviewState = ledger.ReviewStateApproved
-	runState.ApprovedTicketIDs = ids
-	runState.ReviewUpdatedAt = nowStamp()
-	if err := runState.Save(s.repoRoot); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

@@ -11,6 +11,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -134,6 +136,56 @@ func TestHandleListTickets_ReturnsAllFixtureTickets(t *testing.T) {
 	inProgress := byID["goa-bbb2"]
 	if len(inProgress.Deps) != 1 || inProgress.Deps[0] != "goa-aaa1" {
 		t.Errorf("goa-bbb2 deps = %v, want [goa-aaa1]", inProgress.Deps)
+	}
+}
+
+// TestListTickets_SkipsMalformedFileInsteadOfAborting proves listTickets
+// degrades gracefully as its own doc comment promises: one ticket file
+// ticket.ParseTolerant can't make sense of at all (no frontmatter
+// delimiters, not just a malformed field) is skipped, not turned into a
+// 500 for the entire GET /api/tickets response.
+func TestListTickets_SkipsMalformedFileInsteadOfAborting(t *testing.T) {
+	dir := t.TempDir()
+	mustSaveTicket(t, dir, &ticket.Ticket{
+		ID: "goa-good1", Status: "open", Created: "2026-01-01T00:00:00Z",
+		Type: "task", Priority: 1,
+		Body: fixtureBody("Good ticket", "Fine.", "- ok"),
+	})
+	if err := os.WriteFile(filepath.Join(dir, "goa-bad1.md"), []byte("not a ticket at all"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	tickets, err := listTickets(dir)
+	if err != nil {
+		t.Fatalf("listTickets: %v, want graceful degradation not an error", err)
+	}
+	if len(tickets) != 1 || tickets[0].ID != "goa-good1" {
+		t.Fatalf("tickets = %+v, want just goa-good1", tickets)
+	}
+}
+
+// TestListTickets_SkipsFileThatFailsToRead simulates the TOCTOU window
+// listTickets' own doc comment describes — a file os.ReadDir lists but
+// that's gone (deleted/replaced by a concurrent process) by the time
+// os.ReadFile reaches it — via a broken symlink, which produces the same
+// os.ReadFile error shape.
+func TestListTickets_SkipsFileThatFailsToRead(t *testing.T) {
+	dir := t.TempDir()
+	mustSaveTicket(t, dir, &ticket.Ticket{
+		ID: "goa-good2", Status: "open", Created: "2026-01-01T00:00:00Z",
+		Type: "task", Priority: 1,
+		Body: fixtureBody("Good ticket", "Fine.", "- ok"),
+	})
+	if err := os.Symlink(filepath.Join(dir, "does-not-exist"), filepath.Join(dir, "goa-vanished1.md")); err != nil {
+		t.Fatal(err)
+	}
+
+	tickets, err := listTickets(dir)
+	if err != nil {
+		t.Fatalf("listTickets: %v, want graceful degradation not an error", err)
+	}
+	if len(tickets) != 1 || tickets[0].ID != "goa-good2" {
+		t.Fatalf("tickets = %+v, want just goa-good2", tickets)
 	}
 }
 
@@ -270,6 +322,87 @@ func TestPatchTicket_WhileRejected_Returns409_FileUnchanged(t *testing.T) {
 	}
 	if !bytes.Equal(before, after) {
 		t.Errorf("PATCH while rejected touched the file:\nbefore: %q\nafter:  %q", before, after)
+	}
+}
+
+// TestPatchTicket_AcceptanceCriteriaWithHeadingLine_Returns400_FileUnchanged
+// proves a PATCH whose acceptance_criteria contains a "## "-prefixed line is
+// refused outright (400, no file touched) rather than silently written and
+// truncated on the very next read — ticket.SetSection's own validation
+// (sections.go) surfacing through this handler.
+func TestPatchTicket_AcceptanceCriteriaWithHeadingLine_Returns400_FileUnchanged(t *testing.T) {
+	dir := t.TempDir()
+	mustSaveTicket(t, dir, &ticket.Ticket{
+		ID: "goa-ac1", Status: "open", Created: "2026-01-01T00:00:00Z",
+		Type: "task", Priority: 2,
+		Body: fixtureBody("AC Title", "AC description.", "- original"),
+	})
+	path := filepath.Join(dir, "goa-ac1.md")
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+
+	state := &apiState{repoRoot: t.TempDir(), runID: "run-a", ticketsDir: dir, cancel: func() {}}
+	h := newReviewHandler(testToken, state)
+
+	sneaky := "- criterion one\n## Done\n- criterion two"
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, newAPIRequest(t, "PATCH", "/api/tickets/goa-ac1", testToken, ticketPatch{AcceptanceCriteria: &sneaky}))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400; body: %s", rec.Code, rec.Body.String())
+	}
+
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read fixture after refused PATCH: %v", err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Errorf("refused PATCH touched the file:\nbefore: %q\nafter:  %q", before, after)
+	}
+}
+
+// TestWithLedgerLock_SerializesConcurrentAccess proves apiState's ledger
+// critical section (shared by handleReject/handleWithdraw/handleApprove) is
+// mutually exclusive across goroutines — the fix for the lost-update race
+// those three handlers have when dispatched concurrently (e.g. the review
+// UI's Approve and Reject buttons are both enabled at once, so a
+// double-click fires both requests together): each mutate callback runs
+// while holding the lock, so no two callbacks ever run at the same time.
+func TestWithLedgerLock_SerializesConcurrentAccess(t *testing.T) {
+	repoRoot := t.TempDir()
+	mustSaveRunState(t, repoRoot, &ledger.RunState{RunID: "run-a", ReviewState: ledger.ReviewStatePending})
+	state := &apiState{repoRoot: repoRoot, runID: "run-a"}
+
+	const n = 20
+	var active int32
+	var maxActive int32
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, err := state.withLedgerLock(func(rs *ledger.RunState) {
+				cur := atomic.AddInt32(&active, 1)
+				for {
+					prev := atomic.LoadInt32(&maxActive)
+					if cur <= prev || atomic.CompareAndSwapInt32(&maxActive, prev, cur) {
+						break
+					}
+				}
+				time.Sleep(time.Millisecond)
+				atomic.AddInt32(&active, -1)
+				rs.ReviewNotes = "touched"
+			})
+			if err != nil {
+				t.Errorf("withLedgerLock: %v", err)
+			}
+		}()
+	}
+	wg.Wait()
+
+	if maxActive != 1 {
+		t.Errorf("max concurrent withLedgerLock callbacks = %d, want 1 (must be serialized)", maxActive)
 	}
 }
 
