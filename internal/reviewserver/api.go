@@ -38,17 +38,29 @@ type apiState struct {
 	// cancel triggers Run's shutdown (POST /api/approve only). Must be
 	// non-nil in any apiState a handler can actually be invoked through.
 	cancel context.CancelFunc
+
+	// broadcaster fans out review_updated_at changes to GET /api/events
+	// subscribers (watch.go). Must be non-nil in any apiState a handler can
+	// actually be invoked through — handleEvents subscribes to it directly.
+	broadcaster *reviewUpdateBroadcaster
+	// done mirrors Run's runCtx.Done(): closed when shutdown begins, so
+	// handleEvents' write loop can return promptly instead of blocking
+	// srv.Shutdown for the full shutdownTimeout with a live SSE connection
+	// still open.
+	done <-chan struct{}
 }
 
-// registerAPIRoutes wires goa-4ufc's routes onto mux. Host/token
-// enforcement happens outside this mux entirely (newReviewHandler's
-// composition) — nothing here re-checks either.
+// registerAPIRoutes wires goa-4ufc's and goa-7cxd's routes onto mux.
+// Host/token enforcement happens outside this mux entirely
+// (newReviewHandler's composition) — nothing here re-checks either.
 func registerAPIRoutes(mux *http.ServeMux, state *apiState) {
 	mux.HandleFunc("GET /api/tickets", state.handleListTickets)
 	mux.HandleFunc("PATCH /api/tickets/{id}", state.handlePatchTicket)
 	mux.HandleFunc("POST /api/reject", state.handleReject)
 	mux.HandleFunc("POST /api/withdraw", state.handleWithdraw)
 	mux.HandleFunc("POST /api/approve", state.handleApprove)
+	mux.HandleFunc("GET /api/status", state.handleStatus)
+	mux.HandleFunc("GET /api/events", state.handleEvents)
 }
 
 // newReviewHandler builds the full request chain for one review-server
@@ -347,4 +359,64 @@ func (s *apiState) handleApprove(w http.ResponseWriter, r *http.Request) {
 	// waiting on a handler that's waiting on Shutdown; a goroutine lets
 	// this handler return immediately so Shutdown observes it as finished.
 	go s.cancel()
+}
+
+// statusJSON is GET /api/status's response shape: just enough for the
+// front end's polling fallback to detect a change without a second full
+// ticket-list fetch — GET /api/tickets stays a bare array with no room for
+// a review_updated_at field bolted on.
+type statusJSON struct {
+	ReviewState     string `json:"review_state"`
+	ReviewUpdatedAt string `json:"review_updated_at"`
+}
+
+func (s *apiState) handleStatus(w http.ResponseWriter, r *http.Request) {
+	runState, err := ledger.LoadRunState(s.repoRoot, s.runID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, statusJSON{
+		ReviewState:     runState.ReviewState,
+		ReviewUpdatedAt: runState.ReviewUpdatedAt,
+	})
+}
+
+// handleEvents is the SSE push side of live refresh: it never serializes
+// ticket data itself (the page re-fetches GET /api/tickets on receipt), and
+// it must return promptly once s.done fires even mid-stream — otherwise a
+// browser tab left open with its EventSource connected would make
+// srv.Shutdown (server.go) block for the full shutdownTimeout on every
+// POST /api/approve or SIGINT, turning today's clean shutdown into a
+// several-second hang.
+func (s *apiState) handleEvents(w http.ResponseWriter, r *http.Request) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+
+	// Subscribing before the response headers are flushed guarantees that
+	// by the time a client sees this connection as open, it is already
+	// registered to receive the next broadcast — no window where an event
+	// fired between "client connected" and "server subscribed" is missed.
+	ch, unsubscribe := s.broadcaster.subscribe()
+	defer unsubscribe()
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.WriteHeader(http.StatusOK)
+	flusher.Flush()
+
+	for {
+		select {
+		case reviewUpdatedAt := <-ch:
+			fmt.Fprintf(w, "data: %s\n\n", reviewUpdatedAt)
+			flusher.Flush()
+		case <-r.Context().Done():
+			return
+		case <-s.done:
+			return
+		}
+	}
 }
