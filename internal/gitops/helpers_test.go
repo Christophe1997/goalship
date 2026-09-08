@@ -102,3 +102,11 @@ func tkClose(t *testing.T, repoRoot, ticketID string) {
 	t.Helper()
 	runOK(t, repoRoot, "tk", "close", ticketID)
 }
+
+// tkStart sets ticketID to in_progress via the real `tk start` — reconcile
+// only ever looks at in-progress tickets, so every reconcile fixture needs
+// this after tkCreate (which leaves a ticket "open").
+func tkStart(t *testing.T, repoRoot, ticketID string) {
+	t.Helper()
+	runOK(t, repoRoot, "tk", "start", ticketID)
+}
