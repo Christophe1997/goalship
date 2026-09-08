@@ -1,6 +1,6 @@
 ---
 id: goa-rqrf
-status: open
+status: closed
 deps: [goa-9nhc, goa-g7ei]
 links: []
 created: 2026-09-03T06:41:46Z
@@ -19,3 +19,17 @@ internal/cli/loop/claim.go: 'claim' loads the run's ledger (U5A) and refuses to 
 - `goalship loop ledger`'s flag set has no flag capable of writing review_state or approved_ticket_ids, asserted directly against ledger.go's flag definitions (not by exercising every flag combination).
 - A successful claim's branch creation and claim-note recording happen as one atomic sequence with no window where the branch exists but the note doesn't (or vice versa).
 
+
+## Notes
+
+**2026-09-03T13:26:32Z**
+
+branch: feature/claim-structural-approval-gate-ledger-flag-surface-assertion
+base: feature/ledger-core-state-codec-r7-r8-plus-preflight-dirty-resume-candidates
+claim_sha: 2009b78a9628b303e19a31eec82a444920734aed
+
+**2026-09-03T13:44:35Z**
+
+branch: feature/claim-structural-approval-gate-ledger-flag-surface-assertion
+pr: https://github.com/Christophe1997/goalship/pull/16
+sha: ea3aac98e4bd983d100753c954c39b6ca4beea35

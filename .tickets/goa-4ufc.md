@@ -1,6 +1,6 @@
 ---
 id: goa-4ufc
-status: open
+status: closed
 deps: [goa-et9p]
 links: []
 created: 2026-09-03T06:41:47Z
@@ -21,3 +21,17 @@ internal/reviewserver/api.go: GET /api/tickets (lists every ticket in the graph 
 - POST /api/approve writes approved_ticket_ids matching exactly the ticket ID set GET /api/tickets returned at approval time, and releases the per-run lock.
 - A PATCH request arriving with a missing/wrong token or a foreign Host header is refused with no ticket file touched.
 
+
+## Notes
+
+**2026-09-03T11:27:06Z**
+
+branch: feature/review-api-routes-ticket-edit-reject-withdraw-approve
+base: feature/review-server-core-bind-token-host-validation-csp-lock-open-browser
+claim_sha: 0b36822229e0ff5fa755e63d06cec01f49f8f12e
+
+**2026-09-03T11:55:01Z**
+
+branch: feature/review-api-routes-ticket-edit-reject-withdraw-approve
+pr: https://github.com/Christophe1997/goalship/pull/13
+sha: b0789e3d14c5c1fe8fe43af53d8610d40d3976b1

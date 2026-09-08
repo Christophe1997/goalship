@@ -1,6 +1,6 @@
 ---
 id: goa-et9p
-status: open
+status: closed
 deps: [goa-g7ei, goa-9nhc, goa-6yik, goa-4z08]
 links: []
 created: 2026-09-03T06:41:47Z
@@ -24,3 +24,17 @@ internal/reviewserver/server.go + security.go + internal/cli/review.go: 'goalshi
 - The tokened URL is printed to stdout before the browser-open call is attempted, so it's visible even if that call fails.
 - Review server killed (not clean-exited) mid-review: the lock does not wedge a later invocation against the same run-id.
 
+
+## Notes
+
+**2026-09-03T11:08:57Z**
+
+branch: feature/review-server-core-bind-token-host-validation-csp-lock-open-browser
+base: feature/goalship-review-status-plain-cli-discovery-command
+claim_sha: 571ed8f41e5e44903901e00b520d825f466b513c
+
+**2026-09-03T11:26:27Z**
+
+branch: feature/review-server-core-bind-token-host-validation-csp-lock-open-browser
+pr: https://github.com/Christophe1997/goalship/pull/12
+sha: 0b36822229e0ff5fa755e63d06cec01f49f8f12e

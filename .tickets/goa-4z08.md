@@ -1,6 +1,6 @@
 ---
 id: goa-4z08
-status: open
+status: closed
 deps: [goa-9nhc]
 links: []
 created: 2026-09-03T06:41:47Z
@@ -20,3 +20,17 @@ internal/cli/loop/reviewstatus.go: a pure read-only command — reads the run's 
 - An approved run reports review_state: approved explicitly.
 - A nonexistent run-id errors clearly and consistently with how preflight reports a missing/invalid run elsewhere in this system.
 
+
+## Notes
+
+**2026-09-03T10:53:18Z**
+
+branch: feature/goalship-review-status-plain-cli-discovery-command
+base: feature/ledger-core-state-codec-r7-r8-plus-preflight-dirty-resume-candidates
+claim_sha: 2009b78a9628b303e19a31eec82a444920734aed
+
+**2026-09-03T11:02:48Z**
+
+branch: feature/goalship-review-status-plain-cli-discovery-command
+pr: https://github.com/Christophe1997/goalship/pull/11
+sha: 571ed8f41e5e44903901e00b520d825f466b513c

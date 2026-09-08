@@ -1,6 +1,6 @@
 ---
 id: goa-9nhc
-status: open
+status: closed
 deps: [goa-fxh3, goa-g7ei]
 links: []
 created: 2026-09-03T06:41:46Z
@@ -21,3 +21,20 @@ internal/ledger/state.go ports run_state.py's RunState (/Users/christophe/.claud
 - ensure_ledger_excluded adds /.goalship/ to a repo's .git/info/exclude exactly once, idempotent on repeated calls.
 - preflight against a repo with a configured origin and a local main branch resolves trunk_branch correctly and reports {ok:true, remote_url, trunk_branch, host_tool}; an unresolvable override branch lands in failures rather than silently falling back to autodetection.
 
+
+## Notes
+
+**2026-09-03T10:22:14Z**
+
+goa-5zwn added internal/ledger.EnsureExcluded(repoRoot) (internal/ledger/exclude.go) — reuse it from this ticket's ledger command instead of re-porting run_state.py's ensure_ledger_excluded.
+
+**2026-09-03T10:22:48Z**
+
+branch: feature/ledger-core-state-codec-r7-r8-plus-preflight-dirty-resume-candidates
+claim_sha: f3043f0b1cd4351f158b2a7b8f1eb9f1a8c3733f
+
+**2026-09-03T10:52:41Z**
+
+branch: feature/ledger-core-state-codec-r7-r8-plus-preflight-dirty-resume-candidates
+pr: https://github.com/Christophe1997/goalship/pull/10
+sha: 2009b78a9628b303e19a31eec82a444920734aed

@@ -1,6 +1,6 @@
 ---
 id: goa-5zwn
-status: open
+status: closed
 deps: [goa-g7ei, goa-jatp]
 links: []
 created: 2026-09-03T06:41:46Z
@@ -20,3 +20,16 @@ internal/gitops/commit.go + pr.go + internal/cli/loop/commit.go, pr.go, ship.go:
 - A gh/glab call that hangs past 30 seconds is killed and reported as a timeout, not left hanging.
 - ship writes the closing note and closes the ticket as one atomic sequence.
 
+
+## Notes
+
+**2026-09-03T10:02:40Z**
+
+branch: feature/commit-pr-mechanics-commit-push-find-pr-create-pr-retarget-pr-ship
+claim_sha: f3043f0b1cd4351f158b2a7b8f1eb9f1a8c3733f
+
+**2026-09-03T10:21:55Z**
+
+branch: feature/commit-pr-mechanics-commit-push-find-pr-create-pr-retarget-pr-ship
+pr: https://github.com/Christophe1997/goalship/pull/9
+sha: 2ec6b94e0edfc5b564f0b5a7648ef89d85576da7

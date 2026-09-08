@@ -1,6 +1,6 @@
 ---
 id: goa-7cxd
-status: open
+status: closed
 deps: [goa-et9p, goa-4ufc]
 links: []
 created: 2026-09-03T06:41:47Z
@@ -21,3 +21,23 @@ internal/reviewserver/watch.go + assets/index.html, app.js, app.css: fsnotify (G
 - An open, unsaved ticket-edit form is never silently overwritten by an incoming live-refresh event — the update queues instead.
 - The read-only banner shown during a pending rejection updates the moment a regeneration lands, rather than the page silently re-enabling with no explanation.
 
+
+## Notes
+
+**2026-09-03T12:22:58Z**
+
+branch: feature/live-refresh-fsnotify-sse-poll-and-embedded-front-end-assets
+base: feature/review-api-routes-ticket-edit-reject-withdraw-approve
+claim_sha: b0789e3d14c5c1fe8fe43af53d8610d40d3976b1
+
+**2026-09-03T13:24:42Z**
+
+branch: feature/live-refresh-fsnotify-sse-poll-and-embedded-front-end-assets
+pr: https://github.com/Christophe1997/goalship/pull/15
+sha: f9e5d7e19c918ed7489ef25b0107029b81faaf78
+
+**2026-09-03T13:24:53Z**
+
+branch: feature/live-refresh-fsnotify-sse-poll-and-embedded-front-end-assets
+pr: https://github.com/Christophe1997/goalship/pull/15
+sha: f9e5d7e19c918ed7489ef25b0107029b81faaf78
