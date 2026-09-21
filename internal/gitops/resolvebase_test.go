@@ -91,6 +91,20 @@ func TestResolveBase_UnknownTicketID_Errors(t *testing.T) {
 	}
 }
 
+// TestResolveBase_TicketIDWithJQSyntax_Errors: the ID is spliced into a jq
+// filter, so an unescaped quote rewrites the filter — with a single ticket in
+// the repo, `x" or true or .id=="` would match it and silently resolve that
+// ticket's dependencies instead of failing.
+func TestResolveBase_TicketIDWithJQSyntax_Errors(t *testing.T) {
+	repoRoot := newTestRepo(t)
+	tkCreate(t, repoRoot, "Only ticket")
+
+	base, err := resolveBase(repoRoot, `x" or true or .id=="`, "main", "", failIfCalledPRState(t))
+	if err == nil {
+		t.Fatalf("resolveBase: expected an error for an ID carrying jq syntax, got base %q", base)
+	}
+}
+
 func TestResolveBase_SingleOpenDependency_ResolvesToItsBranch(t *testing.T) {
 	repoRoot := newTestRepo(t)
 	depID := tkCreate(t, repoRoot, "Dependency")
