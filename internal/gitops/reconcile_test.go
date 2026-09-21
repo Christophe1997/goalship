@@ -154,6 +154,30 @@ func TestReconcile_RetryPRCreation(t *testing.T) {
 	}
 }
 
+// TestReconcile_BranchOnlyTicket_SkipsHostLookup: a ticket claimed but never
+// shipped has no PR to look up, so a missing or unauthenticated gh/glab must
+// not abort the whole run before its retry_pr_creation is reported.
+func TestReconcile_BranchOnlyTicket_SkipsHostLookup(t *testing.T) {
+	repoRoot := newTestRepo(t)
+	ticketID := tkCreate(t, repoRoot, "claimed, no pr yet")
+	tkStart(t, repoRoot, ticketID)
+	tkAddNote(t, repoRoot, ticketID, "branch: feat/x")
+
+	t.Setenv("PATH", pathWithoutHostTools(t))
+
+	report, err := Reconcile(repoRoot)
+	if err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+	if report.AuthFailure != "" {
+		t.Fatalf("AuthFailure = %q, want none — a branch-only ticket needs no host lookup", report.AuthFailure)
+	}
+	want := ReconciliationAction{TicketID: ticketID, Outcome: OutcomeRetryPRCreation, Detail: "feat/x"}
+	if len(report.Actions) != 1 || report.Actions[0] != want {
+		t.Errorf("Actions = %+v, want exactly [%+v]", report.Actions, want)
+	}
+}
+
 func TestReconcile_RetargetBaseMerged(t *testing.T) {
 	repoRoot := newTestRepo(t)
 	baseTicket := tkCreate(t, repoRoot, "base ticket")
@@ -320,7 +344,7 @@ func TestReconcile_AuthFailure_NoHostToolOnPath(t *testing.T) {
 	repoRoot := newTestRepo(t)
 	ticketID := tkCreate(t, repoRoot, "needs a host tool")
 	tkStart(t, repoRoot, ticketID)
-	tkAddNote(t, repoRoot, ticketID, "branch: feat/x")
+	tkAddNote(t, repoRoot, ticketID, "branch: feat/x\npr: PR1")
 
 	t.Setenv("PATH", pathWithoutHostTools(t))
 
@@ -343,7 +367,7 @@ func TestReconcile_AuthFailure_BadCredential_ResurfacesEveryCall(t *testing.T) {
 	repoRoot := newTestRepo(t)
 	ticketID := tkCreate(t, repoRoot, "needs a host tool")
 	tkStart(t, repoRoot, ticketID)
-	tkAddNote(t, repoRoot, ticketID, "branch: feat/x")
+	tkAddNote(t, repoRoot, ticketID, "branch: feat/x\npr: PR1")
 	fakeGH(t, 1, nil) // `gh auth status` fails every time
 
 	for i := 0; i < 2; i++ {

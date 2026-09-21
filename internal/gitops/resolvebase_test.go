@@ -78,6 +78,19 @@ func TestResolveBase_NoDependencies_ResolvesToTrunk(t *testing.T) {
 	}
 }
 
+// TestResolveBase_UnknownTicketID_Errors: a stale or mistyped ID must fail
+// loudly — resolving it to trunk would silently branch a stacked ticket off
+// main instead of its dependency's branch.
+func TestResolveBase_UnknownTicketID_Errors(t *testing.T) {
+	repoRoot := newTestRepo(t)
+	tkCreate(t, repoRoot, "Some other ticket")
+
+	base, err := resolveBase(repoRoot, "no-such-ticket", "main", "", failIfCalledPRState(t))
+	if err == nil {
+		t.Fatalf("resolveBase: expected an error for an unknown ticket ID, got base %q", base)
+	}
+}
+
 func TestResolveBase_SingleOpenDependency_ResolvesToItsBranch(t *testing.T) {
 	repoRoot := newTestRepo(t)
 	depID := tkCreate(t, repoRoot, "Dependency")

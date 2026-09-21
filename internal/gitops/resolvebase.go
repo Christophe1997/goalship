@@ -110,10 +110,10 @@ func resolveBase(repoRoot, ticketID, trunkBranch, hostTool string, prState PRSta
 	if err != nil {
 		return "", err
 	}
-	var depIDs []string
-	if len(matches) > 0 {
-		depIDs = stringSlice(matches[0]["deps"])
+	if len(matches) != 1 {
+		return "", fmt.Errorf("could not resolve base for %q: expected exactly 1 matching ticket, found %d", ticketID, len(matches))
 	}
+	depIDs := stringSlice(matches[0]["deps"])
 
 	var dependencyPRs []DependencyPR
 	for _, depID := range depIDs {
