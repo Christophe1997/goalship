@@ -206,6 +206,82 @@ func TestClaimCmd_CrashRecovery_ChecksOutExistingBranchAndWritesNote(t *testing.
 	}
 }
 
+// TestClaimCmd_CrashRecovery_BranchNotDescendedFromBase_Refuses: a retry that
+// resolves a different stacked base than the crashed attempt built on must
+// not stamp a "base:" note the existing branch's history doesn't back up —
+// later retarget logic trusts that note.
+func TestClaimCmd_CrashRecovery_BranchNotDescendedFromBase_Refuses(t *testing.T) {
+	repoRoot, ticketID := claimTestSetup(t)
+	saveRunState(t, repoRoot, &ledger.RunState{
+		RunID: "r1", ReviewState: ledger.ReviewStateApproved,
+		ApprovedTicketIDs: []string{ticketID},
+	})
+
+	runLoopGit(t, repoRoot, "branch", "feat/x", "main")
+	runLoopGit(t, repoRoot, "checkout", "-q", "-b", "feat/dep", "main")
+	runLoopGit(t, repoRoot, "commit", "-q", "--allow-empty", "-m", "dep work")
+	runLoopGit(t, repoRoot, "checkout", "-q", "main")
+
+	err := execClaimExpectError(t, []string{repoRoot, ticketID, "feat/x", "feat/dep", "main", "--run-id", "r1"})
+	if err == nil {
+		t.Fatal("claim: expected an error when the existing branch does not descend from the base ref, got nil")
+	}
+	if !strings.Contains(err.Error(), "feat/dep") {
+		t.Errorf("error = %q, want it to name the base ref", err)
+	}
+	if strings.Contains(ticketBody(t, repoRoot, ticketID), "branch:") {
+		t.Error("claim note was written despite the refusal")
+	}
+	if current := strings.TrimSpace(runLoopGit(t, repoRoot, "branch", "--show-current")); current != "main" {
+		t.Errorf("current branch = %q, want %q (a refused claim must not switch branches)", current, "main")
+	}
+}
+
+func TestClaimCmd_CrashRecovery_BranchDescendedFromBase_RecordsBase(t *testing.T) {
+	repoRoot, ticketID := claimTestSetup(t)
+	saveRunState(t, repoRoot, &ledger.RunState{
+		RunID: "r1", ReviewState: ledger.ReviewStateApproved,
+		ApprovedTicketIDs: []string{ticketID},
+	})
+
+	runLoopGit(t, repoRoot, "checkout", "-q", "-b", "feat/dep", "main")
+	runLoopGit(t, repoRoot, "commit", "-q", "--allow-empty", "-m", "dep work")
+	runLoopGit(t, repoRoot, "branch", "feat/x", "feat/dep")
+	runLoopGit(t, repoRoot, "checkout", "-q", "main")
+
+	execCmd(t, NewClaimCmd(), []string{repoRoot, ticketID, "feat/x", "feat/dep", "main", "--run-id", "r1"})
+
+	if body := ticketBody(t, repoRoot, ticketID); !strings.Contains(body, "base: feat/dep") {
+		t.Errorf("note missing \"base: feat/dep\":\n%s", body)
+	}
+}
+
+// TestClaimCmd_CrashRecovery_TrunkAdvancedSinceCrash_StillRecovers pins that
+// lineage is only verified where a "base:" note would be written: a trunk
+// base is never recorded, and trunk legitimately moves between a crash and
+// its retry, so requiring the old branch to contain the new trunk tip would
+// wrongly refuse ordinary recovery.
+func TestClaimCmd_CrashRecovery_TrunkAdvancedSinceCrash_StillRecovers(t *testing.T) {
+	repoRoot, ticketID := claimTestSetup(t)
+	saveRunState(t, repoRoot, &ledger.RunState{
+		RunID: "r1", ReviewState: ledger.ReviewStateApproved,
+		ApprovedTicketIDs: []string{ticketID},
+	})
+
+	runLoopGit(t, repoRoot, "branch", "feat/x", "main")
+	runLoopGit(t, repoRoot, "commit", "-q", "--allow-empty", "-m", "trunk moved")
+
+	execCmd(t, NewClaimCmd(), []string{repoRoot, ticketID, "feat/x", "main", "main", "--run-id", "r1"})
+
+	body := ticketBody(t, repoRoot, ticketID)
+	if !strings.Contains(body, "branch: feat/x") {
+		t.Errorf("note missing \"branch: feat/x\":\n%s", body)
+	}
+	if strings.Contains(body, "base:") {
+		t.Errorf("note should omit \"base:\" for a trunk base:\n%s", body)
+	}
+}
+
 func TestClaimCmd_MissingRunID_Errors(t *testing.T) {
 	repoRoot, ticketID := claimTestSetup(t)
 	err := execClaimExpectError(t, []string{repoRoot, ticketID, "feat/x", "main", "main"})

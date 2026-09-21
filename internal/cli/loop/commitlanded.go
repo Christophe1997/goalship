@@ -12,7 +12,7 @@ func NewCommitLandedCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "commit-landed <repo-root> <branch> <claim-sha>",
 		Short: "Report whether a commit has landed on branch since claim-sha",
-		Args:  cobra.MinimumNArgs(3),
+		Args:  cobra.ExactArgs(3),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			landed, err := gitops.CommitLanded(args[0], args[1], args[2])
 			if err != nil {
