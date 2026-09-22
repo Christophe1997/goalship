@@ -139,7 +139,10 @@ func Reconcile(repoRoot string) (*ReconciliationReport, error) {
 			return nil, err
 		}
 		tickets = append(tickets, ticketFields{id: id, fields: fields})
-		if fields["pr"] != "" || fields["branch"] != "" {
+		// Deliberately not `|| branch` (reconciliation.py's condition): a
+		// branch-only ticket resolves locally below, so a missing gh/glab
+		// must not abort every other ticket's reconciliation.
+		if fields["pr"] != "" {
 			needsHostLookup = true
 		}
 	}

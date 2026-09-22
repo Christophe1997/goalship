@@ -26,6 +26,9 @@ func CommitAll(repoRoot, message string) (string, error) {
 // PushBranch pushes branchName to origin and sets it to track. Never
 // force. Mirrors branching.py's push_branch.
 func PushBranch(repoRoot, branchName string) error {
+	if err := rejectFlagLikeRef("branch", branchName); err != nil {
+		return err
+	}
 	_, err := run(repoRoot, "git", "push", "-u", "origin", branchName)
 	return err
 }

@@ -8,6 +8,7 @@ package loop
 
 import (
 	"context"
+	"fmt"
 	"os/exec"
 	"regexp"
 	"strings"
@@ -224,13 +225,29 @@ func runPreflight(repoRoot string, willCreatePRs bool, trunkBranchOverride strin
 	}, nil
 }
 
+// parseWillCreatePRs accepts only the documented true|false vocabulary: any
+// other value read as false would skip host-tool detection and let a
+// PR-creating run start with no upfront warning.
+func parseWillCreatePRs(arg string) (bool, error) {
+	switch strings.ToLower(arg) {
+	case "true":
+		return true, nil
+	case "false":
+		return false, nil
+	}
+	return false, fmt.Errorf("loop preflight: <true|false> must be \"true\" or \"false\", got %q", arg)
+}
+
 func NewPreflightCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "preflight <repo-root> <true|false> [trunk-branch]",
 		Short: "Run pre-run checks before the execution loop starts",
 		Args:  cobra.RangeArgs(2, 3),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			willCreatePRs := strings.ToLower(args[1]) == "true"
+			willCreatePRs, err := parseWillCreatePRs(args[1])
+			if err != nil {
+				return err
+			}
 			var trunkOverride string
 			if len(args) > 2 {
 				trunkOverride = args[2]

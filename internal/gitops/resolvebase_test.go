@@ -78,6 +78,33 @@ func TestResolveBase_NoDependencies_ResolvesToTrunk(t *testing.T) {
 	}
 }
 
+// TestResolveBase_UnknownTicketID_Errors: a stale or mistyped ID must fail
+// loudly — resolving it to trunk would silently branch a stacked ticket off
+// main instead of its dependency's branch.
+func TestResolveBase_UnknownTicketID_Errors(t *testing.T) {
+	repoRoot := newTestRepo(t)
+	tkCreate(t, repoRoot, "Some other ticket")
+
+	base, err := resolveBase(repoRoot, "no-such-ticket", "main", "", failIfCalledPRState(t))
+	if err == nil {
+		t.Fatalf("resolveBase: expected an error for an unknown ticket ID, got base %q", base)
+	}
+}
+
+// TestResolveBase_TicketIDWithJQSyntax_Errors: the ID is spliced into a jq
+// filter, so an unescaped quote rewrites the filter — with a single ticket in
+// the repo, `x" or true or .id=="` would match it and silently resolve that
+// ticket's dependencies instead of failing.
+func TestResolveBase_TicketIDWithJQSyntax_Errors(t *testing.T) {
+	repoRoot := newTestRepo(t)
+	tkCreate(t, repoRoot, "Only ticket")
+
+	base, err := resolveBase(repoRoot, `x" or true or .id=="`, "main", "", failIfCalledPRState(t))
+	if err == nil {
+		t.Fatalf("resolveBase: expected an error for an ID carrying jq syntax, got base %q", base)
+	}
+}
+
 func TestResolveBase_SingleOpenDependency_ResolvesToItsBranch(t *testing.T) {
 	repoRoot := newTestRepo(t)
 	depID := tkCreate(t, repoRoot, "Dependency")

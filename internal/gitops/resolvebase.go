@@ -106,14 +106,14 @@ func ResolveBase(repoRoot, ticketID, trunkBranch, hostTool string) (string, erro
 }
 
 func resolveBase(repoRoot, ticketID, trunkBranch, hostTool string, prState PRStateFunc) (string, error) {
-	matches, err := tkQuery(repoRoot, fmt.Sprintf(`select(.id=="%s")`, ticketID))
+	matches, err := tkQuery(repoRoot, fmt.Sprintf(`select(.id==%s)`, jqString(ticketID)))
 	if err != nil {
 		return "", err
 	}
-	var depIDs []string
-	if len(matches) > 0 {
-		depIDs = stringSlice(matches[0]["deps"])
+	if len(matches) != 1 {
+		return "", fmt.Errorf("could not resolve base for %q: expected exactly 1 matching ticket, found %d", ticketID, len(matches))
 	}
+	depIDs := stringSlice(matches[0]["deps"])
 
 	var dependencyPRs []DependencyPR
 	for _, depID := range depIDs {

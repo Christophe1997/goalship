@@ -15,7 +15,7 @@ const ticketsDirName = ".tickets"
 // branching.py's reset_to_clean_base (abort cleanup on a gate failure or
 // interruption).
 func Reset(repoRoot, baseRef string) error {
-	if _, err := run(repoRoot, "git", "checkout", baseRef); err != nil {
+	if err := CheckoutBranch(repoRoot, baseRef); err != nil {
 		return err
 	}
 	if _, err := run(repoRoot, "git", "reset", "--hard", "HEAD"); err != nil {

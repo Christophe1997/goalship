@@ -14,6 +14,15 @@ var (
 	kvLineRE       = regexp.MustCompile(`^([a-zA-Z_]+):\s*(.+)$`)
 )
 
+// jqString renders s as a jq string literal so an agent-supplied value can be
+// spliced into a filter without rewriting it. JSON string syntax is a subset
+// of jq's, and json.Marshal escapes the backslash that would start a `\(...)`
+// interpolation.
+func jqString(s string) string {
+	b, _ := json.Marshal(s) // a string always marshals
+	return string(b)
+}
+
 // tkQuery runs `tk query <jqFilter>` against the real installed `tk`
 // binary and parses its newline-delimited JSON output — mirrors
 // reconciliation.py's tk_query. Ticket-graph query capability doesn't yet

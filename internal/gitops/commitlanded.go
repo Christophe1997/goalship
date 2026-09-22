@@ -8,6 +8,9 @@ func HeadSHA(repoRoot, ref string) (string, error) {
 	if ref == "" {
 		ref = "HEAD"
 	}
+	if err := rejectFlagLikeRef("ref", ref); err != nil {
+		return "", err
+	}
 	out, err := run(repoRoot, "git", "rev-parse", ref)
 	if err != nil {
 		return "", err

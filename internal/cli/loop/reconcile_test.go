@@ -107,7 +107,7 @@ func TestReconcileCmd_JSONShape_AuthFailure(t *testing.T) {
 	repoRoot := newLoopTestRepo(t)
 	ticketID := tkCreate(t, repoRoot, "needs a host tool")
 	tkStart(t, repoRoot, ticketID)
-	tkAddNote(t, repoRoot, ticketID, "branch: feat/x")
+	tkAddNote(t, repoRoot, ticketID, "branch: feat/x\npr: PR1")
 
 	t.Setenv("PATH", pathWithoutHostTools(t))
 

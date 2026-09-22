@@ -53,6 +53,22 @@ func NewClaimCmd() *cobra.Command {
 				// but crashed before writing the claim note. Check it back
 				// out and retry from here instead of failing on "branch
 				// already exists".
+				//
+				// Only a non-trunk base is verified: recordClaimNote writes a
+				// "base:" line just for one, and trunk legitimately advances
+				// between a crash and its retry, so demanding the old branch
+				// contain the new trunk tip would refuse ordinary recovery. A
+				// stacked base is a shipped predecessor's branch, which the
+				// loop never advances, so it can be required as an ancestor.
+				if baseRef != trunkBranch {
+					descends, err := gitops.IsAncestor(repoRoot, baseRef, branchName)
+					if err != nil {
+						return fmt.Errorf("loop claim: %w", err)
+					}
+					if !descends {
+						return fmt.Errorf("loop claim: branch %q already exists but does not descend from base %q; delete the stale branch or claim with the base it was created from", branchName, baseRef)
+					}
+				}
 				if err := gitops.CheckoutBranch(repoRoot, branchName); err != nil {
 					return fmt.Errorf("loop claim: %w", err)
 				}

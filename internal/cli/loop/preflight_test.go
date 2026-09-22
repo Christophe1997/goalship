@@ -93,6 +93,31 @@ func TestPreflightCmd_NoRemote_ReportsFailure(t *testing.T) {
 	}
 }
 
+// TestPreflightCmd_MalformedWillCreatePRs_Errors: only the documented
+// true|false vocabulary is accepted — "yes"/"1"/a typo silently reading as
+// false would skip host-tool detection and let a PR-creating run proceed
+// with no upfront warning.
+func TestPreflightCmd_MalformedWillCreatePRs_Errors(t *testing.T) {
+	repoRoot := newLoopTestRepo(t)
+	addOrigin(t, repoRoot, "https://github.com/example/repo.git")
+
+	for _, bad := range []string{"1", "yes", "ture", ""} {
+		t.Run("arg="+bad, func(t *testing.T) {
+			err := execExpectError(NewPreflightCmd(), []string{repoRoot, bad})
+			if err == nil {
+				t.Fatal("execute: expected an error for a malformed <true|false> argument, got nil")
+			}
+		})
+	}
+}
+
+func TestPreflightCmd_WillCreatePRsIsCaseInsensitive(t *testing.T) {
+	repoRoot := newLoopTestRepo(t)
+	addOrigin(t, repoRoot, "https://github.com/example/repo.git")
+
+	execCmd(t, NewPreflightCmd(), []string{repoRoot, "FALSE"})
+}
+
 func TestPreflightCmd_DirtyWorkingTree_ReportsFailure(t *testing.T) {
 	repoRoot := newLoopTestRepo(t)
 	addOrigin(t, repoRoot, "https://github.com/example/repo.git")
