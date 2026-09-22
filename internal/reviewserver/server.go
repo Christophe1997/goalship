@@ -15,13 +15,12 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"runtime"
 	"time"
 
 	"github.com/Christophe1997/goalship/internal/ledger"
+	"github.com/Christophe1997/goalship/internal/ticket"
 )
 
 //go:embed assets
@@ -107,10 +106,7 @@ func Run(ctx context.Context, opts Options) error {
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	ticketsDir := filepath.Join(opts.RepoRoot, ".tickets")
-	if v := os.Getenv("TICKETS_DIR"); v != "" {
-		ticketsDir = v
-	}
+	ticketsDir := ticket.ResolveTicketsDir(opts.RepoRoot)
 
 	broadcaster := newReviewUpdateBroadcaster()
 	state := &apiState{

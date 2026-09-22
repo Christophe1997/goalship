@@ -282,6 +282,30 @@ func TestClaimCmd_CrashRecovery_TrunkAdvancedSinceCrash_StillRecovers(t *testing
 	}
 }
 
+// TestClaimCmd_HonorsTicketsDirEnvOverride pins that the claim note lands
+// in the TICKETS_DIR override dir, not a fresh repoRoot/.tickets.
+func TestClaimCmd_HonorsTicketsDirEnvOverride(t *testing.T) {
+	repoRoot := newLoopTestRepo(t)
+	ticketsDir := t.TempDir()
+	t.Setenv("TICKETS_DIR", ticketsDir)
+	ticketID := tkCreate(t, repoRoot, "Ticket outside repoRoot/.tickets")
+
+	saveRunState(t, repoRoot, &ledger.RunState{
+		RunID: "r1", ReviewState: ledger.ReviewStateApproved,
+		ApprovedTicketIDs: []string{ticketID},
+	})
+
+	execCmd(t, NewClaimCmd(), []string{repoRoot, ticketID, "feat/x", "main", "main", "--run-id", "r1"})
+
+	data, err := os.ReadFile(filepath.Join(ticketsDir, ticketID+".md"))
+	if err != nil {
+		t.Fatalf("read ticket from TICKETS_DIR override %q: %v", ticketsDir, err)
+	}
+	if !strings.Contains(string(data), "branch: feat/x") {
+		t.Errorf("claim note not written into TICKETS_DIR override location:\n%s", data)
+	}
+}
+
 func TestClaimCmd_MissingRunID_Errors(t *testing.T) {
 	repoRoot, ticketID := claimTestSetup(t)
 	err := execClaimExpectError(t, []string{repoRoot, ticketID, "feat/x", "main", "main"})
