@@ -99,6 +99,36 @@ func TestCommitAll_OnlyTicketsChanges_FailsRatherThanCommittingThem(t *testing.T
 	}
 }
 
+// TestCommitAll_TicketsDirEnvOverride_ExcludesOtherInRepoDir pins that once
+// TICKETS_DIR points at a different in-repo directory (#25's own deferred
+// P0 finding), CommitAll's negative pathspec follows it there instead of
+// staying hardcoded to ".tickets" and sweeping the override dir into the
+// commit.
+func TestCommitAll_TicketsDirEnvOverride_ExcludesOtherInRepoDir(t *testing.T) {
+	repoRoot := newTestRepo(t)
+	t.Setenv("TICKETS_DIR", filepath.Join(repoRoot, "custom-tickets"))
+	mustMkdirAll(t, filepath.Join(repoRoot, "custom-tickets"))
+	writeFile(t, filepath.Join(repoRoot, "custom-tickets", "T-1.md"), "pending ticket edit\n")
+	writeFile(t, filepath.Join(repoRoot, "impl.go"), "package main\n")
+
+	if _, err := CommitAll(repoRoot, "feat: add impl"); err != nil {
+		t.Fatalf("CommitAll: %v", err)
+	}
+
+	stat := runOK(t, repoRoot, "git", "show", "--stat", "HEAD")
+	if !strings.Contains(stat, "impl.go") {
+		t.Errorf("HEAD commit does not include impl.go:\n%s", stat)
+	}
+	if strings.Contains(stat, "custom-tickets") {
+		t.Errorf("HEAD commit unexpectedly includes custom-tickets/ (TICKETS_DIR override):\n%s", stat)
+	}
+
+	status := runOK(t, repoRoot, "git", "status", "--porcelain", "custom-tickets")
+	if strings.TrimSpace(status) == "" {
+		t.Errorf("custom-tickets/ shows clean after CommitAll; T-1.md should remain untracked")
+	}
+}
+
 func TestCommitAll_ExcludesLedgerDirViaGitInfoExclude(t *testing.T) {
 	repoRoot := newTestRepo(t)
 	writeFile(t, filepath.Join(repoRoot, "impl.go"), "package main\n")

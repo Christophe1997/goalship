@@ -75,3 +75,32 @@ func TestDirtyCmd_ExcludesGoalshipAndTicketsDirs(t *testing.T) {
 		t.Errorf("dirty paths = %v, want only [real-change.txt]", got)
 	}
 }
+
+// TestDirtyCmd_ExcludesTicketsDirEnvOverride pins that once TICKETS_DIR
+// points at a different in-repo directory (#25's own deferred P0 finding),
+// dirtyPaths follows it there instead of staying hardcoded to ".tickets"
+// and flagging the override dir's routine bookkeeping churn as dirty.
+func TestDirtyCmd_ExcludesTicketsDirEnvOverride(t *testing.T) {
+	repoRoot := newLoopTestRepo(t)
+	ticketsDir := filepath.Join(repoRoot, "custom-tickets")
+	t.Setenv("TICKETS_DIR", ticketsDir)
+	if err := os.MkdirAll(ticketsDir, 0o755); err != nil {
+		t.Fatalf("mkdir custom-tickets: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(ticketsDir, "t1.md"), []byte("---\n---\n"), 0o644); err != nil {
+		t.Fatalf("write custom-tickets/t1.md: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repoRoot, "real-change.txt"), []byte("x\n"), 0o644); err != nil {
+		t.Fatalf("write real-change.txt: %v", err)
+	}
+
+	out := execCmd(t, NewDirtyCmd(), []string{repoRoot})
+
+	var got []string
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("unmarshal output %q: %v", out, err)
+	}
+	if len(got) != 1 || got[0] != "real-change.txt" {
+		t.Errorf("dirty paths = %v, want only [real-change.txt]", got)
+	}
+}

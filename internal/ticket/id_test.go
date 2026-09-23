@@ -32,6 +32,42 @@ func TestResolveTicketsDir_EmptyEnvVarFallsBackToRepoRoot(t *testing.T) {
 	}
 }
 
+func TestRelativeTicketsDir_DefaultIsDotTickets(t *testing.T) {
+	t.Setenv("TICKETS_DIR", "")
+
+	rel, ok := RelativeTicketsDir("/repo/root")
+	if !ok || rel != ".tickets" {
+		t.Errorf("RelativeTicketsDir = (%q, %v), want (%q, true)", rel, ok, ".tickets")
+	}
+}
+
+func TestRelativeTicketsDir_EnvVarInsideRepoRoot(t *testing.T) {
+	t.Setenv("TICKETS_DIR", "/repo/root/nested/custom-tickets")
+
+	rel, ok := RelativeTicketsDir("/repo/root")
+	if !ok || rel != "nested/custom-tickets" {
+		t.Errorf("RelativeTicketsDir = (%q, %v), want (%q, true)", rel, ok, "nested/custom-tickets")
+	}
+}
+
+func TestRelativeTicketsDir_EnvVarOutsideRepoRoot_NotOK(t *testing.T) {
+	t.Setenv("TICKETS_DIR", "/somewhere/else/tickets")
+
+	rel, ok := RelativeTicketsDir("/repo/root")
+	if ok {
+		t.Errorf("RelativeTicketsDir = (%q, %v), want ok=false for a TICKETS_DIR outside repoRoot", rel, ok)
+	}
+}
+
+func TestRelativeTicketsDir_EnvVarEqualsRepoRoot_NotOK(t *testing.T) {
+	t.Setenv("TICKETS_DIR", "/repo/root")
+
+	rel, ok := RelativeTicketsDir("/repo/root")
+	if ok {
+		t.Errorf("RelativeTicketsDir = (%q, %v), want ok=false when TICKETS_DIR equals repoRoot itself", rel, ok)
+	}
+}
+
 func TestResolve_ExactFilenameMatch(t *testing.T) {
 	dir := t.TempDir()
 	writeTicketFile(t, dir, "goa-g7ei.md")

@@ -47,6 +47,30 @@ func TestReset_NeverDeletesTheUntrackedTicketsDir(t *testing.T) {
 	}
 }
 
+// TestReset_TicketsDirEnvOverride_NeverDeletesOtherInRepoDir pins that once
+// TICKETS_DIR points at a different in-repo directory (#25's own deferred
+// P0 finding), Reset's clean exclusion follows it there instead of staying
+// hardcoded to ".tickets" and sweeping the override dir as untracked cruft.
+func TestReset_TicketsDirEnvOverride_NeverDeletesOtherInRepoDir(t *testing.T) {
+	repoRoot := newTestRepo(t)
+	t.Setenv("TICKETS_DIR", filepath.Join(repoRoot, "custom-tickets"))
+	createBranch(t, repoRoot, "feat/will-fail-3", "origin/main")
+	mustMkdirAll(t, filepath.Join(repoRoot, "custom-tickets"))
+	writeFile(t, filepath.Join(repoRoot, "custom-tickets", "T-1.md"), "# T-1\n")
+	writeFile(t, filepath.Join(repoRoot, "half-done.txt"), "broken\n")
+
+	if err := Reset(repoRoot, "main"); err != nil {
+		t.Fatalf("Reset: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(repoRoot, "custom-tickets", "T-1.md")); err != nil {
+		t.Errorf("custom-tickets/T-1.md was swept by Reset (TICKETS_DIR override): %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(repoRoot, "half-done.txt")); !os.IsNotExist(err) {
+		t.Errorf("half-done.txt still exists after Reset")
+	}
+}
+
 func TestReset_NeverDeletesTheBranchItself(t *testing.T) {
 	repoRoot := newTestRepo(t)
 	createBranch(t, repoRoot, "feat/kept-around", "origin/main")

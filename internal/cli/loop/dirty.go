@@ -7,29 +7,32 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Christophe1997/goalship/internal/ledger"
+	"github.com/Christophe1997/goalship/internal/ticket"
 )
 
-// ticketsDirName mirrors run_state.py's TICKETS_DIR_NAME and
-// internal/gitops/reset.go's own ticketsDirName const — tk's state
-// directory, excluded from the dirty-tree check for the same reason as
-// ledger.LedgerDirName: `tk start`/`tk add-note` mutate it as a routine
-// side effect of running this very loop, unrelated to a ticket's
-// implementation diff.
-const ticketsDirName = ".tickets"
-
-// ignoredDirtyDirNames mirrors preflight.py's _IGNORED_DIRTY_DIR_NAMES.
-var ignoredDirtyDirNames = []string{ledger.LedgerDirName, ticketsDirName}
+// ignoredDirtyDirNames mirrors preflight.py's _IGNORED_DIRTY_DIR_NAMES:
+// repo-relative dirs excluded from the dirty-tree check (defense-in-depth:
+// writing the ledger, or tk mutating its own files — including a
+// TICKETS_DIR override resolving inside repoRoot — must never trip this
+// check, since both are routine side effects of running this very loop,
+// unrelated to a ticket's implementation diff).
+func ignoredDirtyDirNames(repoRoot string) []string {
+	names := []string{ledger.LedgerDirName}
+	if relTicketsDir, ok := ticket.RelativeTicketsDir(repoRoot); ok {
+		names = append(names, relTicketsDir)
+	}
+	return names
+}
 
 // dirtyPaths mirrors preflight.py's dirty_paths: repo-relative paths git
-// considers dirty, excluding the ledger dir and tk's own state dir
-// (defense-in-depth: writing the ledger, or tk mutating its own files,
-// must never trip this check).
+// considers dirty, excluding the ledger dir and tk's own state dir.
 func dirtyPaths(repoRoot string) ([]string, error) {
 	out, ok := gitOutput(repoRoot, "status", "--short", "--untracked-files=all")
 	if !ok {
 		return nil, fmt.Errorf("loop dirty: git status failed in %s", repoRoot)
 	}
 
+	ignoredNames := ignoredDirtyDirNames(repoRoot)
 	paths := []string{}
 	for _, line := range strings.Split(out, "\n") {
 		if line == "" || len(line) < 3 {
@@ -37,7 +40,7 @@ func dirtyPaths(repoRoot string) ([]string, error) {
 		}
 		relpath := strings.TrimSpace(line[3:])
 		ignored := false
-		for _, name := range ignoredDirtyDirNames {
+		for _, name := range ignoredNames {
 			if relpath == name || strings.HasPrefix(relpath, name+"/") {
 				ignored = true
 				break
