@@ -32,6 +32,29 @@ func ResolveTicketsDir(repoRoot string) string {
 	return filepath.Join(repoRoot, ".tickets")
 }
 
+// RelativeTicketsDir returns ResolveTicketsDir(repoRoot) expressed as a
+// slash-separated path relative to repoRoot, for callers that build git
+// pathspecs or clean exclusions scoped to repoRoot (git wants "/" on every
+// platform). ok is false when the resolved tickets directory is repoRoot
+// itself or lies outside it entirely (e.g. a TICKETS_DIR override pointing
+// elsewhere) — there is nothing under repoRoot for such a caller to
+// exclude, so it should fall back to its own no-exclusion behavior.
+func RelativeTicketsDir(repoRoot string) (relDir string, ok bool) {
+	absRepo, err := filepath.Abs(repoRoot)
+	if err != nil {
+		return "", false
+	}
+	absDir, err := filepath.Abs(ResolveTicketsDir(repoRoot))
+	if err != nil {
+		return "", false
+	}
+	rel, err := filepath.Rel(absRepo, absDir)
+	if err != nil || rel == "." || !filepath.IsLocal(rel) {
+		return "", false
+	}
+	return filepath.ToSlash(rel), true
+}
+
 // Resolve finds the ticket file matching id within ticketsDir: an exact
 // "<id>.md" filename match, else a single unambiguous substring match
 // anywhere in .tickets/*.md filenames — mirrors bash tk's ticket_path().
