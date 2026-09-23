@@ -49,7 +49,7 @@ func RelativeTicketsDir(repoRoot string) (relDir string, ok bool) {
 		return "", false
 	}
 	rel, err := filepath.Rel(absRepo, absDir)
-	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+	if err != nil || rel == "." || !filepath.IsLocal(rel) {
 		return "", false
 	}
 	return filepath.ToSlash(rel), true
