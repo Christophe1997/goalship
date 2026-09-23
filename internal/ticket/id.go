@@ -17,6 +17,21 @@ var ErrNotFound = errors.New("ticket: not found")
 // file and no exact match disambiguates it.
 var ErrAmbiguous = errors.New("ticket: ambiguous id")
 
+// TicketsDirEnv is bash tk's TICKETS_DIR override variable name.
+const TicketsDirEnv = "TICKETS_DIR"
+
+// ResolveTicketsDir returns the tickets directory for repoRoot: the
+// TICKETS_DIR override when set, else repoRoot's ".tickets" subdirectory.
+// Unlike tk's own cwd-relative walk-up, this never searches parent
+// directories — callers here already have an explicit repoRoot instead of
+// relying on cwd.
+func ResolveTicketsDir(repoRoot string) string {
+	if v := os.Getenv(TicketsDirEnv); v != "" {
+		return v
+	}
+	return filepath.Join(repoRoot, ".tickets")
+}
+
 // Resolve finds the ticket file matching id within ticketsDir: an exact
 // "<id>.md" filename match, else a single unambiguous substring match
 // anywhere in .tickets/*.md filenames — mirrors bash tk's ticket_path().

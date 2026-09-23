@@ -10,10 +10,6 @@ import (
 	"github.com/Christophe1997/goalship/internal/ticket"
 )
 
-// ticketsDirEnv mirrors bash tk's TICKETS_DIR override, checked before the
-// parent-directory walk.
-const ticketsDirEnv = "TICKETS_DIR"
-
 // locateTicketsDir mirrors bash tk's find_tickets_dir(): the TICKETS_DIR
 // env var if set — returned as-is, with no existence check, exactly like
 // bash's own `[[ -n "${TICKETS_DIR:-}" ]] && { echo "$TICKETS_DIR";
@@ -24,7 +20,7 @@ const ticketsDirEnv = "TICKETS_DIR"
 // is_write_cmd branch): findTicketsDir requires it, findOrInitTicketsDir
 // doesn't.
 func locateTicketsDir() (dir string, ok bool) {
-	if v := os.Getenv(ticketsDirEnv); v != "" {
+	if v := os.Getenv(ticket.TicketsDirEnv); v != "" {
 		return v, true
 	}
 	cwd, err := os.Getwd()

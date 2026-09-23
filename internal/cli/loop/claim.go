@@ -2,7 +2,6 @@ package loop
 
 import (
 	"fmt"
-	"path/filepath"
 	"slices"
 	"strings"
 
@@ -106,7 +105,7 @@ func recordClaimNote(repoRoot, ticketID, branchName, baseRef, trunkBranch, claim
 	}
 	lines = append(lines, "claim_sha: "+claimSHA)
 
-	ticketsDir := filepath.Join(repoRoot, ".tickets")
+	ticketsDir := ticket.ResolveTicketsDir(repoRoot)
 	path, err := ticket.Resolve(ticketsDir, ticketID)
 	if err != nil {
 		return err

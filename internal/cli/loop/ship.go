@@ -2,7 +2,6 @@ package loop
 
 import (
 	"fmt"
-	"path/filepath"
 
 	"github.com/spf13/cobra"
 
@@ -16,7 +15,7 @@ import (
 // Goes directly through internal/ticket rather than shelling out to `tk
 // add-note`/`tk close` the way the Python original does.
 func runShip(repoRoot, ticketID, branch, prURL, sha string) error {
-	ticketsDir := filepath.Join(repoRoot, ".tickets")
+	ticketsDir := ticket.ResolveTicketsDir(repoRoot)
 	path, err := ticket.Resolve(ticketsDir, ticketID)
 	if err != nil {
 		return fmt.Errorf("loop ship: %w", err)

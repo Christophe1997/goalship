@@ -176,6 +176,26 @@ func TestShipCmd_WritesClosingNoteAndClosesTicket(t *testing.T) {
 	}
 }
 
+// TestShipCmd_HonorsTicketsDirEnvOverride pins that ship closes the ticket
+// in the TICKETS_DIR override dir, not a fresh repoRoot/.tickets.
+func TestShipCmd_HonorsTicketsDirEnvOverride(t *testing.T) {
+	repoRoot := newLoopTestRepo(t)
+	ticketsDir := t.TempDir()
+	t.Setenv("TICKETS_DIR", ticketsDir)
+	ticketID := tkCreate(t, repoRoot, "Ticket outside repoRoot/.tickets")
+
+	execCmd(t, NewShipCmd(), []string{repoRoot, ticketID, "feat/x", "https://github.com/o/r/pull/3", "deadbeef"})
+
+	data, err := os.ReadFile(filepath.Join(ticketsDir, ticketID+".md"))
+	if err != nil {
+		t.Fatalf("read ticket from TICKETS_DIR override %q: %v", ticketsDir, err)
+	}
+	content := string(data)
+	if !strings.Contains(content, "status: closed") {
+		t.Errorf("ticket not closed in TICKETS_DIR override location:\n%s", content)
+	}
+}
+
 func TestShipCmd_UnknownTicketID_Errors(t *testing.T) {
 	repoRoot := newLoopTestRepo(t)
 	if err := os.MkdirAll(filepath.Join(repoRoot, ".tickets"), 0o755); err != nil {

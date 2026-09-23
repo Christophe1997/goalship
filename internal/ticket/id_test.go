@@ -15,6 +15,23 @@ func writeTicketFile(t *testing.T, dir, name string) {
 	}
 }
 
+func TestResolveTicketsDir_EnvVarWins(t *testing.T) {
+	t.Setenv("TICKETS_DIR", "/custom/tickets")
+
+	if got, want := ResolveTicketsDir("/repo/root"), "/custom/tickets"; got != want {
+		t.Errorf("ResolveTicketsDir = %q, want %q", got, want)
+	}
+}
+
+func TestResolveTicketsDir_EmptyEnvVarFallsBackToRepoRoot(t *testing.T) {
+	t.Setenv("TICKETS_DIR", "")
+
+	want := filepath.Join("/repo/root", ".tickets")
+	if got := ResolveTicketsDir("/repo/root"); got != want {
+		t.Errorf("ResolveTicketsDir = %q, want %q", got, want)
+	}
+}
+
 func TestResolve_ExactFilenameMatch(t *testing.T) {
 	dir := t.TempDir()
 	writeTicketFile(t, dir, "goa-g7ei.md")
