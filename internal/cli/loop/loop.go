@@ -33,6 +33,7 @@ func NewCmd() *cobra.Command {
 		NewRetargetPRCmd(),
 		NewShipCmd(),
 		NewResetCmd(),
+		NewSweepBranchesCmd(),
 	)
 
 	return cmd
