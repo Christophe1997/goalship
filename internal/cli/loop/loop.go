@@ -24,6 +24,7 @@ func NewCmd() *cobra.Command {
 		NewCommitLandedCmd(),
 		NewRunBranchCmd(),
 		NewFindPRCmd(),
+		NewMergeOrderCmd(),
 		NewClaimCmd(),
 		NewCommitCmd(),
 		NewHeadSHACmd(),

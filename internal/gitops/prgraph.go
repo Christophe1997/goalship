@@ -199,3 +199,56 @@ func detectCycle(prs []OpenPR, branchOwner map[string]int) error {
 	}
 	return fmt.Errorf("gitops: cycle detected in open PR graph among: %s", strings.Join(stuck, ", "))
 }
+
+// TopologicalMergeOrder returns prs in land order: a PR appears only after
+// every open PR it depends on (X.Base == Y.Branch, so X depends on Y) has
+// already appeared. It first calls ValidateOpenPRGraph and propagates any
+// error unchanged with no partial order returned. Ties among simultaneously
+// eligible PRs are broken by iterating prs in its given order, never a map,
+// so the result is deterministic.
+func TopologicalMergeOrder(prs []OpenPR) ([]OpenPR, error) {
+	if err := ValidateOpenPRGraph(prs); err != nil {
+		return nil, err
+	}
+
+	// A branch shared by 2+ PRs is only ever looked up below as some PR's
+	// Base, and ValidateOpenPRGraph already rejected any such branch that's
+	// also referenced as a base — so whichever owner a shared, unreferenced
+	// branch resolves to here is never actually queried.
+	n := len(prs)
+	branchOwner := make(map[string]int, n)
+	for i, pr := range prs {
+		branchOwner[pr.Branch] = i
+	}
+
+	outDegree := make([]int, n)
+	dependents := make([][]int, n) // dependents[j] = nodes i with i -> j
+	for i, pr := range prs {
+		if j, ok := branchOwner[pr.Base]; ok {
+			outDegree[i]++
+			dependents[j] = append(dependents[j], i)
+		}
+	}
+
+	queue := make([]int, 0, n)
+	for i, deg := range outDegree {
+		if deg == 0 {
+			queue = append(queue, i)
+		}
+	}
+
+	order := make([]OpenPR, 0, n)
+	for len(queue) > 0 {
+		node := queue[0]
+		queue = queue[1:]
+		order = append(order, prs[node])
+		for _, dependent := range dependents[node] {
+			outDegree[dependent]--
+			if outDegree[dependent] == 0 {
+				queue = append(queue, dependent)
+			}
+		}
+	}
+
+	return order, nil
+}

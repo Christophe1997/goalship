@@ -82,6 +82,90 @@ func TestValidateOpenPRGraph_FanInAmbiguity_Errors(t *testing.T) {
 	}
 }
 
+// ---- TopologicalMergeOrder ----
+
+func TestTopologicalMergeOrder_LinearStack_RootFirst(t *testing.T) {
+	top := OpenPR{Number: 3, Branch: "feat/c", Base: "feat/b"}
+	root := OpenPR{Number: 1, Branch: "feat/a", Base: "main"}
+	middle := OpenPR{Number: 2, Branch: "feat/b", Base: "feat/a"}
+	prs := []OpenPR{top, root, middle} // scrambled: top first, root in the middle
+
+	got, err := TopologicalMergeOrder(prs)
+	if err != nil {
+		t.Fatalf("TopologicalMergeOrder: %v", err)
+	}
+	want := []OpenPR{root, middle, top}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got = %+v, want %+v", got, want)
+	}
+}
+
+func TestTopologicalMergeOrder_TwoIndependentStacks_BothRootsFirst(t *testing.T) {
+	a1 := OpenPR{Number: 1, Branch: "feat/a1", Base: "main"}
+	a2 := OpenPR{Number: 2, Branch: "feat/a2", Base: "feat/a1"}
+	b1 := OpenPR{Number: 3, Branch: "feat/b1", Base: "main"}
+	b2 := OpenPR{Number: 4, Branch: "feat/b2", Base: "feat/b1"}
+	prs := []OpenPR{b2, a2, a1, b1} // interleaved, tops of both stacks first
+
+	got, err := TopologicalMergeOrder(prs)
+	if err != nil {
+		t.Fatalf("TopologicalMergeOrder: %v", err)
+	}
+	want := []OpenPR{a1, b1, a2, b2}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got = %+v, want %+v", got, want)
+	}
+}
+
+func TestTopologicalMergeOrder_ZeroOpenPRs_ReturnsEmptyOrder(t *testing.T) {
+	got, err := TopologicalMergeOrder(nil)
+	if err != nil {
+		t.Fatalf("TopologicalMergeOrder: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("len(got) = %d, want 0", len(got))
+	}
+}
+
+func TestTopologicalMergeOrder_Cycle_PropagatesValidationErrorUnchanged(t *testing.T) {
+	prs := []OpenPR{
+		{Number: 1, Branch: "feat/a", Base: "feat/b"},
+		{Number: 2, Branch: "feat/b", Base: "feat/a"},
+	}
+	wantErr := ValidateOpenPRGraph(prs)
+	if wantErr == nil {
+		t.Fatal("ValidateOpenPRGraph: want a cycle error for this fixture, got nil")
+	}
+
+	got, err := TopologicalMergeOrder(prs)
+	if got != nil {
+		t.Errorf("got = %+v, want nil order on error", got)
+	}
+	if err == nil || err.Error() != wantErr.Error() {
+		t.Fatalf("err = %v, want %v", err, wantErr)
+	}
+}
+
+func TestTopologicalMergeOrder_FanInAmbiguity_PropagatesValidationErrorUnchanged(t *testing.T) {
+	prs := []OpenPR{
+		{Number: 1, Branch: "feat/x", Base: "main"},
+		{Number: 2, Branch: "feat/x", Base: "develop"},
+		{Number: 3, Branch: "feat/y", Base: "feat/x"},
+	}
+	wantErr := ValidateOpenPRGraph(prs)
+	if wantErr == nil {
+		t.Fatal("ValidateOpenPRGraph: want a fan-in ambiguity error for this fixture, got nil")
+	}
+
+	got, err := TopologicalMergeOrder(prs)
+	if got != nil {
+		t.Errorf("got = %+v, want nil order on error", got)
+	}
+	if err == nil || err.Error() != wantErr.Error() {
+		t.Fatalf("err = %v, want %v", err, wantErr)
+	}
+}
+
 // ---- ListOpenPRs: gh ----
 
 func TestListOpenPRs_GH_ArgvAndParse(t *testing.T) {
