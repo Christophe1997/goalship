@@ -1,5 +1,14 @@
 package gitops
 
+// SweepCandidate outcomes — the CLI's JSON wire values, matching this
+// package's existing named-outcome-constant convention (see reconcile.go's
+// Outcome* constants).
+const (
+	SweepOutcomeWouldDelete = "would-delete"
+	SweepOutcomeDeleted     = "deleted"
+	SweepOutcomeFailed      = "failed"
+)
+
 // SweepCandidate is one goalship-managed ticket branch SweepBranches judged
 // eligible for cleanup: its ticket's recorded PR has merged, and the branch
 // is not currently any open PR's base or head.
@@ -7,8 +16,8 @@ type SweepCandidate struct {
 	TicketID string
 	Branch   string
 	PRRef    string
-	Outcome  string // "would-delete" | "deleted" | "failed"
-	Error    string // set only when Outcome == "failed"
+	Outcome  string // one of the SweepOutcome* constants
+	Error    string // set only when Outcome == SweepOutcomeFailed
 }
 
 // SweepBranches finds every ticket branch with a merged PR that isn't any
@@ -65,13 +74,13 @@ func SweepBranches(repoRoot, hostTool string, execute bool) ([]SweepCandidate, e
 		candidate := SweepCandidate{TicketID: id, Branch: branch, PRRef: prRef}
 		switch {
 		case !execute:
-			candidate.Outcome = "would-delete"
+			candidate.Outcome = SweepOutcomeWouldDelete
 		default:
 			if err := deleteRemoteBranch(repoRoot, branch); err != nil {
-				candidate.Outcome = "failed"
+				candidate.Outcome = SweepOutcomeFailed
 				candidate.Error = err.Error()
 			} else {
-				candidate.Outcome = "deleted"
+				candidate.Outcome = SweepOutcomeDeleted
 			}
 		}
 		candidates = append(candidates, candidate)

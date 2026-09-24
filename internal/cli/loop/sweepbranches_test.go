@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/Christophe1997/goalship/internal/gitops"
 )
 
 // fakeGHSweep mirrors internal/gitops/sweepbranches_test.go's helper of the
@@ -36,7 +38,7 @@ func TestSweepBranchesCmd_DeleteFlagDefaultsFalse_ReportOnly(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &got); err != nil {
 		t.Fatalf("unmarshal %q: %v", out, err)
 	}
-	if len(got) != 1 || got[0].Outcome != "would-delete" {
+	if len(got) != 1 || got[0].Outcome != gitops.SweepOutcomeWouldDelete {
 		t.Errorf("got = %+v, want exactly one would-delete candidate", got)
 	}
 }
@@ -58,9 +60,6 @@ func TestSweepBranchesCmd_JSONShape_SnakeCaseKeys(t *testing.T) {
 	}
 }
 
-// TestSweepBranchesCmd_ReportOnly_NamesOnlyTheEligibleBranch pins the
-// plan's own verification bar for this unit: a fixture with one eligible
-// and one ineligible ticket branch names exactly the eligible one.
 func TestSweepBranchesCmd_ReportOnly_NamesOnlyTheEligibleBranch(t *testing.T) {
 	repoRoot := newLoopTestRepo(t)
 

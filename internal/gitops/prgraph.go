@@ -105,22 +105,27 @@ func listOpenPRsGlab(repoRoot string) ([]OpenPR, error) {
 	return nil, fmt.Errorf("gitops: glab mr list pagination exceeded %d pages without a short page: aborting", glabOpenPRsMaxPages)
 }
 
-// ValidateOpenPRGraph checks prs for the malformed-stack conditions that
-// would make an ordering decision over them unsafe: a self-referential PR,
-// an empty base/branch, a cycle, or a fan-in ambiguity (two open PRs
-// sharing a head branch that some other PR's base also targets — which of
-// them it actually stacks on is then undecidable).
-func ValidateOpenPRGraph(prs []OpenPR) error {
+// validateAndOrderOpenPRGraph checks prs for the malformed-stack conditions
+// that would make an ordering decision over them unsafe (a self-referential
+// PR, an empty base/branch, a cycle, or a fan-in ambiguity — two open PRs
+// sharing a head branch that some other PR's base also targets, so which of
+// them it actually stacks on is undecidable) and, when the graph is valid,
+// returns prs in land order: a PR appears only after every open PR it
+// depends on (X.Base == Y.Branch, so X depends on Y) has already appeared.
+// ValidateOpenPRGraph and TopologicalMergeOrder both need this same
+// validated walk — one graph pass computes both instead of one validating
+// and the other redoing the walk to also keep the order.
+func validateAndOrderOpenPRGraph(prs []OpenPR) ([]OpenPR, error) {
 	branchToPRs := map[string][]int{}
 	for i, pr := range prs {
 		if pr.Branch == "" {
-			return fmt.Errorf("gitops: PR #%d has an empty head branch", pr.Number)
+			return nil, fmt.Errorf("gitops: PR #%d has an empty head branch", pr.Number)
 		}
 		if pr.Base == "" {
-			return fmt.Errorf("gitops: PR #%d has an empty base branch", pr.Number)
+			return nil, fmt.Errorf("gitops: PR #%d has an empty base branch", pr.Number)
 		}
 		if pr.Base == pr.Branch {
-			return fmt.Errorf("gitops: PR #%d is self-referential: base and branch are both %q", pr.Number, pr.Branch)
+			return nil, fmt.Errorf("gitops: PR #%d is self-referential: base and branch are both %q", pr.Number, pr.Branch)
 		}
 		branchToPRs[pr.Branch] = append(branchToPRs[pr.Branch], i)
 	}
@@ -133,7 +138,7 @@ func ValidateOpenPRGraph(prs []OpenPR) error {
 	// tie — map iteration order is randomized in Go.
 	for _, pr := range prs {
 		if idxs := branchToPRs[pr.Branch]; len(idxs) >= 2 && baseUsed[pr.Branch] {
-			return fmt.Errorf("gitops: fan-in ambiguity: %d open PRs share head branch %q, and another PR's base references it", len(idxs), pr.Branch)
+			return nil, fmt.Errorf("gitops: fan-in ambiguity: %d open PRs share head branch %q, and another PR's base references it", len(idxs), pr.Branch)
 		}
 	}
 
@@ -148,79 +153,12 @@ func ValidateOpenPRGraph(prs []OpenPR) error {
 		}
 	}
 
-	return detectCycle(prs, branchOwner)
-}
-
-// detectCycle runs Kahn's algorithm over the "X depends on Y" edges (X.Base
-// == Y.Branch): repeatedly strip nodes with no remaining outgoing edge to a
-// node that's still present. Anything left when no more can be stripped is
-// part of a cycle.
-func detectCycle(prs []OpenPR, branchOwner map[string]int) error {
+	// Kahn's algorithm over the "X depends on Y" edges (X.Base == Y.Branch):
+	// repeatedly strip nodes with no remaining outgoing edge to a node
+	// that's still present. Anything left when no more can be stripped is
+	// part of a cycle; otherwise the strip order (ties broken by iterating
+	// prs in its given order, never a map) is itself the land order.
 	n := len(prs)
-	outDegree := make([]int, n)
-	dependents := make([][]int, n) // dependents[j] = nodes i with i -> j
-
-	for i, pr := range prs {
-		if j, ok := branchOwner[pr.Base]; ok {
-			outDegree[i]++
-			dependents[j] = append(dependents[j], i)
-		}
-	}
-
-	queue := make([]int, 0, n)
-	for i, deg := range outDegree {
-		if deg == 0 {
-			queue = append(queue, i)
-		}
-	}
-	removed := make([]bool, n)
-	count := 0
-	for len(queue) > 0 {
-		node := queue[0]
-		queue = queue[1:]
-		removed[node] = true
-		count++
-		for _, dependent := range dependents[node] {
-			outDegree[dependent]--
-			if outDegree[dependent] == 0 {
-				queue = append(queue, dependent)
-			}
-		}
-	}
-
-	if count == n {
-		return nil
-	}
-	var stuck []string
-	for i, pr := range prs {
-		if !removed[i] {
-			stuck = append(stuck, fmt.Sprintf("#%d (%s -> %s)", pr.Number, pr.Branch, pr.Base))
-		}
-	}
-	return fmt.Errorf("gitops: cycle detected in open PR graph among: %s", strings.Join(stuck, ", "))
-}
-
-// TopologicalMergeOrder returns prs in land order: a PR appears only after
-// every open PR it depends on (X.Base == Y.Branch, so X depends on Y) has
-// already appeared. It first calls ValidateOpenPRGraph and propagates any
-// error unchanged with no partial order returned. Ties among simultaneously
-// eligible PRs are broken by iterating prs in its given order, never a map,
-// so the result is deterministic.
-func TopologicalMergeOrder(prs []OpenPR) ([]OpenPR, error) {
-	if err := ValidateOpenPRGraph(prs); err != nil {
-		return nil, err
-	}
-
-	// A branch shared by 2+ PRs is only ever looked up below as some PR's
-	// Base, and ValidateOpenPRGraph already rejected any such branch that's
-	// also referenced as a base — so whichever owner a shared, unreferenced
-	// branch resolves to here is never actually queried.
-	n := len(prs)
-	branchOwner := make(map[string]int, n)
-	for i, pr := range prs {
-		branchOwner[pr.Branch] = i
-	}
-
 	outDegree := make([]int, n)
 	dependents := make([][]int, n) // dependents[j] = nodes i with i -> j
 	for i, pr := range prs {
@@ -236,11 +174,12 @@ func TopologicalMergeOrder(prs []OpenPR) ([]OpenPR, error) {
 			queue = append(queue, i)
 		}
 	}
-
+	removed := make([]bool, n)
 	order := make([]OpenPR, 0, n)
 	for len(queue) > 0 {
 		node := queue[0]
 		queue = queue[1:]
+		removed[node] = true
 		order = append(order, prs[node])
 		for _, dependent := range dependents[node] {
 			outDegree[dependent]--
@@ -250,5 +189,32 @@ func TopologicalMergeOrder(prs []OpenPR) ([]OpenPR, error) {
 		}
 	}
 
-	return order, nil
+	if len(order) == n {
+		return order, nil
+	}
+	var stuck []string
+	for i, pr := range prs {
+		if !removed[i] {
+			stuck = append(stuck, fmt.Sprintf("#%d (%s -> %s)", pr.Number, pr.Branch, pr.Base))
+		}
+	}
+	return nil, fmt.Errorf("gitops: cycle detected in open PR graph among: %s", strings.Join(stuck, ", "))
+}
+
+// ValidateOpenPRGraph checks prs for the malformed-stack conditions that
+// would make an ordering decision over them unsafe: a self-referential PR,
+// an empty base/branch, a cycle, or a fan-in ambiguity (two open PRs
+// sharing a head branch that some other PR's base also targets — which of
+// them it actually stacks on is then undecidable).
+func ValidateOpenPRGraph(prs []OpenPR) error {
+	_, err := validateAndOrderOpenPRGraph(prs)
+	return err
+}
+
+// TopologicalMergeOrder returns prs in land order: a PR appears only after
+// every open PR it depends on (X.Base == Y.Branch, so X depends on Y) has
+// already appeared. It propagates any validation error unchanged with no
+// partial order returned.
+func TopologicalMergeOrder(prs []OpenPR) ([]OpenPR, error) {
+	return validateAndOrderOpenPRGraph(prs)
 }

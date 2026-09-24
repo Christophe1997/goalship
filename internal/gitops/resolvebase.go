@@ -9,10 +9,9 @@ import (
 )
 
 // hostToolTimeout mirrors branching.py's HOST_TOOL_TIMEOUT_SECONDS = 30,
-// applied to every gh/glab round-trip PRState, FindOpenPRForBranch,
-// CreatePullRequest, and RetargetPullRequest make. A var, not a const, so
-// a test can shrink it (t.Cleanup to restore) to prove a hung fake
-// gh/glab is actually killed without waiting out a real 30s timeout.
+// applied to every gh/glab round-trip this package makes. A var, not a
+// const, so a test can shrink it (t.Cleanup to restore) to prove a hung
+// fake gh/glab is actually killed without waiting out a real 30s timeout.
 var hostToolTimeout = 30 * time.Second
 
 // DependencyPR is a predecessor ticket's linked PR, as recorded in its own
@@ -60,9 +59,7 @@ var prStateMapping = map[string]string{
 
 // PRState is the real, subprocess-backed PRStateFunc: `gh pr view` or
 // `glab mr view`, timing out after hostToolTimeout. Mirrors
-// reconciliation.py's pr_state. resolve-base is the only caller in this
-// ticket's scope; find-pr/create-pr/retarget-pr/ship (the rest of
-// branching.py's gh/glab surface) belong to a later ticket.
+// reconciliation.py's pr_state.
 func PRState(repoRoot, hostTool, prRef string) (state string, ok bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), hostToolTimeout)
 	defer cancel()

@@ -16,13 +16,8 @@ import (
 // candidate's own PR) within a single test.
 func fakeGHSweep(t *testing.T, openPRsJSON string, prStates map[string]string) {
 	t.Helper()
-	var b strings.Builder
-	fmt.Fprintf(&b, "case \"$2\" in\n  list) echo '%s' ;;\n  view)\n    case \"$3\" in\n", openPRsJSON)
-	for ref, state := range prStates {
-		fmt.Fprintf(&b, "      %s) echo %s ;;\n", ref, state)
-	}
-	b.WriteString("      *) exit 1 ;;\n    esac\n    ;;\nesac\n")
-	withFakeHostTool(t, "gh", b.String())
+	script := fmt.Sprintf("case \"$2\" in\n  list) echo '%s' ;;\n  view)\n%s    ;;\nesac\n", openPRsJSON, prStateCaseBlock(prStates))
+	withFakeHostTool(t, "gh", script)
 }
 
 // pushBranchFixture creates branch off main, commits a file, and pushes it
@@ -51,7 +46,7 @@ func TestSweepBranches_ReportOnly_MergedNotInOpenGraph_WouldDelete(t *testing.T)
 	if err != nil {
 		t.Fatalf("SweepBranches: %v", err)
 	}
-	want := []SweepCandidate{{TicketID: ticketID, Branch: "feat/sweep-me", PRRef: "PR1", Outcome: "would-delete"}}
+	want := []SweepCandidate{{TicketID: ticketID, Branch: "feat/sweep-me", PRRef: "PR1", Outcome: SweepOutcomeWouldDelete}}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got = %+v, want %+v", got, want)
 	}
@@ -176,7 +171,7 @@ func TestSweepBranches_PRStateLookupFails_SkipsThatCandidateOnly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SweepBranches: %v", err)
 	}
-	want := []SweepCandidate{{TicketID: okTicket, Branch: "feat/lookup-ok", PRRef: "PROK", Outcome: "would-delete"}}
+	want := []SweepCandidate{{TicketID: okTicket, Branch: "feat/lookup-ok", PRRef: "PROK", Outcome: SweepOutcomeWouldDelete}}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got = %+v, want %+v", got, want)
 	}
@@ -224,7 +219,7 @@ func TestSweepBranches_Execute_DeletesEligibleBranchFromOrigin(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SweepBranches: %v", err)
 	}
-	want := []SweepCandidate{{TicketID: ticketID, Branch: "feat/execute-me", PRRef: "PR1", Outcome: "deleted"}}
+	want := []SweepCandidate{{TicketID: ticketID, Branch: "feat/execute-me", PRRef: "PR1", Outcome: SweepOutcomeDeleted}}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got = %+v, want %+v", got, want)
 	}
@@ -269,11 +264,11 @@ func TestSweepBranches_Execute_OneDeleteFailsOtherStillDeletes(t *testing.T) {
 	}
 
 	pushed := byTicket[pushedTicket]
-	if pushed.Outcome != "deleted" || pushed.Error != "" {
+	if pushed.Outcome != SweepOutcomeDeleted || pushed.Error != "" {
 		t.Errorf("pushed candidate = %+v, want Outcome deleted with no error", pushed)
 	}
 	missing := byTicket[missingTicket]
-	if missing.Outcome != "failed" || missing.Error == "" {
+	if missing.Outcome != SweepOutcomeFailed || missing.Error == "" {
 		t.Errorf("missing candidate = %+v, want Outcome failed with a non-empty error", missing)
 	}
 }
