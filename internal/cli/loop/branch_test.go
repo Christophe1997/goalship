@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Christophe1997/goalship/internal/gitops"
+	"github.com/Christophe1997/goalship/internal/ticket/tickettest"
 )
 
 // newLoopTestRepo initializes a plain git repo (one commit on main) for
@@ -44,14 +45,7 @@ func runLoopGit(t *testing.T, dir string, args ...string) string {
 
 func tkCreate(t *testing.T, repoRoot, title string) string {
 	t.Helper()
-	cmd := exec.Command("tk", "create", title, "-t", "task")
-	cmd.Dir = repoRoot
-	out, err := cmd.Output()
-	if err != nil {
-		t.Fatalf("tk create: %v", err)
-	}
-	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
-	return strings.TrimSpace(lines[len(lines)-1])
+	return tickettest.Create(t, repoRoot, title)
 }
 
 func execCmd(t *testing.T, cmd *cobra.Command, args []string) string {

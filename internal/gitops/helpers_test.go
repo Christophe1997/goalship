@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/Christophe1997/goalship/internal/ticket/tickettest"
 )
 
 // newTestRepo initializes a git repo with a bare "origin" remote and one
@@ -77,36 +79,32 @@ func trimmed(s string) string {
 	return strings.TrimSpace(s)
 }
 
-// tkCreate creates a real ticket via the installed `tk` binary (auto-
-// initializing .tickets/ under repoRoot) and returns its ID — mirrors
-// branching.py's test suite, which also drives the real tk binary rather
-// than a fake.
+// tkCreate and its siblings build ticket fixtures in-process; the names
+// mirror the `goalship tk` commands they stand in for.
 func tkCreate(t *testing.T, repoRoot, title string) string {
 	t.Helper()
-	out := runOK(t, repoRoot, "tk", "create", title, "-t", "task")
-	lines := strings.Split(strings.TrimSpace(out), "\n")
-	return strings.TrimSpace(lines[len(lines)-1])
+	return tickettest.Create(t, repoRoot, title)
 }
 
 func tkAddNote(t *testing.T, repoRoot, ticketID, text string) {
 	t.Helper()
-	runOK(t, repoRoot, "tk", "add-note", ticketID, text)
+	tickettest.AddNote(t, repoRoot, ticketID, text)
 }
 
 func tkDep(t *testing.T, repoRoot, ticketID, depID string) {
 	t.Helper()
-	runOK(t, repoRoot, "tk", "dep", ticketID, depID)
+	tickettest.Dep(t, repoRoot, ticketID, depID)
 }
 
 func tkClose(t *testing.T, repoRoot, ticketID string) {
 	t.Helper()
-	runOK(t, repoRoot, "tk", "close", ticketID)
+	tickettest.SetStatus(t, repoRoot, ticketID, "closed")
 }
 
-// tkStart sets ticketID to in_progress via the real `tk start` — reconcile
-// only ever looks at in-progress tickets, so every reconcile fixture needs
-// this after tkCreate (which leaves a ticket "open").
+// tkStart sets ticketID to in_progress — reconcile only ever looks at
+// in-progress tickets, so every reconcile fixture needs this after tkCreate
+// (which leaves a ticket "open").
 func tkStart(t *testing.T, repoRoot, ticketID string) {
 	t.Helper()
-	runOK(t, repoRoot, "tk", "start", ticketID)
+	tickettest.SetStatus(t, repoRoot, ticketID, "in_progress")
 }

@@ -7,28 +7,22 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/Christophe1997/goalship/internal/ticket/tickettest"
 )
 
-// tkStart and tkAddNote mirror tkCreate (branch_test.go): thin wrappers
-// around the real installed `tk` binary for building fixtures. This
-// package can't reach internal/gitops's own identically-purposed test
-// helpers — different package, unexported.
+// tkStart and tkAddNote mirror tkCreate (branch_test.go): fixture builders
+// over internal/ticket/tickettest. This package can't reach
+// internal/gitops's own identically-purposed test helpers — different
+// package, unexported.
 func tkStart(t *testing.T, repoRoot, ticketID string) {
 	t.Helper()
-	cmd := exec.Command("tk", "start", ticketID)
-	cmd.Dir = repoRoot
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("tk start: %v: %s", err, out)
-	}
+	tickettest.SetStatus(t, repoRoot, ticketID, "in_progress")
 }
 
 func tkAddNote(t *testing.T, repoRoot, ticketID, text string) {
 	t.Helper()
-	cmd := exec.Command("tk", "add-note", ticketID, text)
-	cmd.Dir = repoRoot
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("tk add-note: %v: %s", err, out)
-	}
+	tickettest.AddNote(t, repoRoot, ticketID, text)
 }
 
 // pathWithoutHostTools returns a PATH with a real `tk` (symlinked into its
