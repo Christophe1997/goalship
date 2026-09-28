@@ -341,7 +341,7 @@ func TestListOpenPRs_GH_NonzeroExit_ReturnsExitError(t *testing.T) {
 func glabMRsJSON(startIID, n int) string {
 	var sb strings.Builder
 	sb.WriteByte('[')
-	for i := 0; i < n; i++ {
+	for i := range n {
 		if i > 0 {
 			sb.WriteByte(',')
 		}
