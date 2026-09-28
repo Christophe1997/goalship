@@ -3,7 +3,6 @@ package tk
 import (
 	"fmt"
 	"io"
-	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -15,21 +14,11 @@ import (
 // heading/timestamp formatting to ticket.Ticket.AddNote (shared with `loop
 // ship`'s closing note) before saving.
 func runAddNote(ticketsDir, id, note string) (string, error) {
-	path, err := ticket.Resolve(ticketsDir, id)
+	resolvedID, err := ticket.Update(ticketsDir, id, func(t *ticket.Ticket) { t.AddNote(note) })
 	if err != nil {
 		return "", fmt.Errorf("tk add-note: %w", err)
 	}
-	t, err := ticket.Load(path)
-	if err != nil {
-		return "", fmt.Errorf("tk add-note: %w", err)
-	}
-
-	t.AddNote(note)
-
-	if err := t.Save(path); err != nil {
-		return "", fmt.Errorf("tk add-note: %w", err)
-	}
-	return strings.TrimSuffix(filepath.Base(path), ".md"), nil
+	return resolvedID, nil
 }
 
 func NewAddNoteCmd() *cobra.Command {
