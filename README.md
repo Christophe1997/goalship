@@ -30,7 +30,9 @@ drove the build lives in
 
 ## Install
 
-Once published, build/install from source with Go 1.23+:
+Download a prebuilt binary (linux/darwin, amd64/arm64) from the
+[Releases page](https://github.com/Christophe1997/goalship/releases), or
+build/install from source with Go 1.23+:
 
 ```sh
 go install github.com/Christophe1997/goalship/cmd/goalship@latest
