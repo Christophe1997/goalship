@@ -103,7 +103,7 @@ func ResolveBase(repoRoot, ticketID, trunkBranch, hostTool string) (string, erro
 }
 
 func resolveBase(repoRoot, ticketID, trunkBranch, hostTool string, prState PRStateFunc) (string, error) {
-	matches, err := tkQuery(repoRoot, fmt.Sprintf(`select(.id==%s)`, jqString(ticketID)))
+	matches, err := queryTickets(repoRoot, fmt.Sprintf(`select(.id==%s)`, jqString(ticketID)))
 	if err != nil {
 		return "", err
 	}

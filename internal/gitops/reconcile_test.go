@@ -22,36 +22,27 @@ func fakeGH(t *testing.T, authExit int, prStates map[string]string) {
 	withFakeHostTool(t, "gh", script)
 }
 
-// pathWithoutHostTools returns a PATH value with a real `tk` (symlinked
-// into an isolated directory, since tk and gh/glab share a bin directory on
-// this machine) plus git's own directory, but no gh/glab anywhere on it —
-// used to prove reconcile's needs_host_lookup guard actually skips host-tool
-// detection, and to simulate "neither tool is installed" for auth_failure.
+// pathWithoutHostTools returns a PATH value with git's own directory but no
+// gh/glab anywhere on it — used to prove reconcile's needs_host_lookup guard
+// actually skips host-tool detection, and to simulate "neither tool is
+// installed" for auth_failure.
 func pathWithoutHostTools(t *testing.T) string {
 	t.Helper()
-	tkPath, err := exec.LookPath("tk")
-	if err != nil {
-		t.Fatalf("LookPath tk: %v", err)
-	}
 	gitPath, err := exec.LookPath("git")
 	if err != nil {
 		t.Fatalf("LookPath git: %v", err)
 	}
-	dir := t.TempDir()
-	if err := os.Symlink(tkPath, filepath.Join(dir, "tk")); err != nil {
-		t.Fatalf("symlink tk: %v", err)
-	}
-	return strings.Join([]string{dir, filepath.Dir(gitPath), "/bin"}, string(os.PathListSeparator))
+	return strings.Join([]string{filepath.Dir(gitPath), "/bin"}, string(os.PathListSeparator))
 }
 
 func ticketStatus(t *testing.T, repoRoot, ticketID string) string {
 	t.Helper()
-	matches, err := tkQuery(repoRoot, fmt.Sprintf(`select(.id=="%s")`, ticketID))
+	matches, err := queryTickets(repoRoot, fmt.Sprintf(`select(.id=="%s")`, ticketID))
 	if err != nil {
-		t.Fatalf("tkQuery: %v", err)
+		t.Fatalf("queryTickets: %v", err)
 	}
 	if len(matches) != 1 {
-		t.Fatalf("tkQuery(%s) = %d matches, want 1", ticketID, len(matches))
+		t.Fatalf("queryTickets(%s) = %d matches, want 1", ticketID, len(matches))
 	}
 	status, _ := matches[0]["status"].(string)
 	return status
@@ -225,9 +216,9 @@ func TestReconcile_BlockedStaleBase(t *testing.T) {
 		t.Errorf("action = %+v, want %+v", report.Actions[0], want)
 	}
 
-	notes, err := tkShowNotes(repoRoot, ticketID)
+	notes, err := readNotes(repoRoot, ticketID)
 	if err != nil {
-		t.Fatalf("tkShowNotes: %v", err)
+		t.Fatalf("readNotes: %v", err)
 	}
 	found := false
 	for _, n := range notes {

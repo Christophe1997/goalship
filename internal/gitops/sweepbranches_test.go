@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strconv"
@@ -562,22 +561,23 @@ func TestSweepBranches_OriginUnreachable_IsHardError(t *testing.T) {
 	}
 }
 
-// withTkShowFailingFromCall wraps the real `tk` so its nth and every later
-// `show` call exits 1. It counts calls rather than matching a ticket ID
-// because `tk query`'s ticket order over generated IDs is not controllable.
-func withTkShowFailingFromCall(t *testing.T, n int) {
+var errInjectedNoteRead = errors.New("injected note read failure")
+
+// failNoteReadFromCall makes the nth and every later ticket note read fail.
+// It counts calls rather than matching a ticket ID because the query's
+// ticket order over generated IDs is not controllable.
+func failNoteReadFromCall(t *testing.T, n int) {
 	t.Helper()
-	realTk, err := exec.LookPath("tk")
-	if err != nil {
-		t.Fatalf("tk not on PATH: %v", err)
+	orig := readTicketFile
+	t.Cleanup(func() { readTicketFile = orig })
+	calls := 0
+	readTicketFile = func(path string) ([]byte, error) {
+		calls++
+		if calls >= n {
+			return nil, errInjectedNoteRead
+		}
+		return orig(path)
 	}
-	counter := filepath.Join(t.TempDir(), "show-count")
-	withFakeHostTool(t, "tk", fmt.Sprintf(`if [ "$1" = show ]; then
-  n=$(( $(cat %[1]s 2>/dev/null || echo 0) + 1 ))
-  echo $n > %[1]s
-  if [ "$n" -ge %[2]d ]; then echo "tk show failed" >&2; exit 1; fi
-fi
-exec %[3]s "$@"`, counter, n, realTk))
 }
 
 // deletedFromOrigin returns those of branches origin no longer holds.
@@ -592,10 +592,9 @@ func deletedFromOrigin(t *testing.T, repoRoot string, branches ...string) []stri
 	return deleted
 }
 
-// requireAbortNamesOnlyDeleted checks err leads with the single branch the
-// sweep managed to delete before aborting, and still unwraps to the failed subprocess whose argv has subcommand at
-// position 1.
-func requireAbortNamesOnlyDeleted(t *testing.T, err error, repoRoot, subcommand string, branches ...string) {
+// requireAbortAfterOneDelete checks err leads with the single branch the
+// sweep managed to delete before aborting.
+func requireAbortAfterOneDelete(t *testing.T, err error, repoRoot string, branches ...string) {
 	t.Helper()
 	deleted := deletedFromOrigin(t, repoRoot, branches...)
 	if len(deleted) != 1 {
@@ -607,6 +606,14 @@ func requireAbortNamesOnlyDeleted(t *testing.T, err error, repoRoot, subcommand 
 	if want := "gitops: sweep aborted after deleting " + deleted[0] + ": "; !strings.HasPrefix(err.Error(), want) {
 		t.Errorf("err = %q, want prefix %q", err, want)
 	}
+}
+
+// requireAbortNamesOnlyDeleted is requireAbortAfterOneDelete plus a check
+// that err still unwraps to the failed subprocess whose argv has subcommand
+// at position 1.
+func requireAbortNamesOnlyDeleted(t *testing.T, err error, repoRoot, subcommand string, branches ...string) {
+	t.Helper()
+	requireAbortAfterOneDelete(t, err, repoRoot, branches...)
 	var exitErr *ExitError
 	if !errors.As(err, &exitErr) || len(exitErr.Argv) < 2 || exitErr.Argv[1] != subcommand {
 		t.Errorf("err = %v, want it to unwrap to a failed `%s` call", err, subcommand)
@@ -620,13 +627,16 @@ func TestSweepBranches_Execute_NoteReadFailsAfterDelete_ErrorNamesDeletedBranche
 	shippedTicket(t, repoRoot, "feat/one", "PR-ONE")
 	shippedTicket(t, repoRoot, "feat/two", "PR-TWO")
 	fakeGHSweep(t, "[]", map[string]string{"PR-ONE": "MERGED", "PR-TWO": "MERGED"})
-	withTkShowFailingFromCall(t, 2)
+	failNoteReadFromCall(t, 2)
 
 	got, err := SweepBranches(repoRoot, "gh", true)
 	if got != nil {
 		t.Errorf("got = %+v, want nil on a hard error", got)
 	}
-	requireAbortNamesOnlyDeleted(t, err, repoRoot, "show", "feat/one", "feat/two")
+	requireAbortAfterOneDelete(t, err, repoRoot, "feat/one", "feat/two")
+	if !errors.Is(err, errInjectedNoteRead) {
+		t.Errorf("err = %v, want it to unwrap to the injected note-read failure", err)
+	}
 }
 
 func TestSweepBranches_Execute_OriginBreaksAfterDelete_ErrorNamesDeletedBranches(t *testing.T) {
@@ -650,11 +660,11 @@ func TestSweepBranches_Execute_NoteReadFailsBeforeAnyDelete_ErrorReturnedUnwrapp
 	pushBranchFixture(t, repoRoot, "feat/one")
 	shippedTicket(t, repoRoot, "feat/one", "PR-ONE")
 	fakeGHSweep(t, "[]", map[string]string{"PR-ONE": "MERGED"})
-	withTkShowFailingFromCall(t, 1)
+	failNoteReadFromCall(t, 1)
 
 	_, err := SweepBranches(repoRoot, "gh", true)
-	if _, ok := err.(*ExitError); !ok {
-		t.Errorf("err = %#v, want the bare *ExitError with nothing deleted to report", err)
+	if !errors.Is(err, errInjectedNoteRead) || strings.Contains(err.Error(), "sweep aborted") {
+		t.Errorf("err = %v, want the bare note-read failure with nothing deleted to report", err)
 	}
 	if !originHasBranch(t, repoRoot, "feat/one") {
 		t.Errorf("origin lost feat/one although the sweep aborted before deleting")

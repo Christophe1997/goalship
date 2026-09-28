@@ -25,24 +25,15 @@ func tkAddNote(t *testing.T, repoRoot, ticketID, text string) {
 	tickettest.AddNote(t, repoRoot, ticketID, text)
 }
 
-// pathWithoutHostTools returns a PATH with a real `tk` (symlinked into its
-// own directory, since tk and gh share a bin directory on this machine)
-// plus git's directory, but no gh/glab anywhere on it.
+// pathWithoutHostTools returns a PATH with git's directory but no gh/glab
+// anywhere on it.
 func pathWithoutHostTools(t *testing.T) string {
 	t.Helper()
-	tkPath, err := exec.LookPath("tk")
-	if err != nil {
-		t.Fatalf("LookPath tk: %v", err)
-	}
 	gitPath, err := exec.LookPath("git")
 	if err != nil {
 		t.Fatalf("LookPath git: %v", err)
 	}
-	dir := t.TempDir()
-	if err := os.Symlink(tkPath, filepath.Join(dir, "tk")); err != nil {
-		t.Fatalf("symlink tk: %v", err)
-	}
-	return strings.Join([]string{dir, filepath.Dir(gitPath), "/bin"}, string(os.PathListSeparator))
+	return strings.Join([]string{filepath.Dir(gitPath), "/bin"}, string(os.PathListSeparator))
 }
 
 func TestReconcileCmd_JSONShape_ClosedMerged(t *testing.T) {

@@ -64,7 +64,7 @@ func tkTicketAddNote(repoRoot, ticketID, text string) error {
 // this to in-progress tickets would make retarget_base_merged unreachable.
 // Mirrors reconciliation.py's find_ticket_by_branch.
 func findTicketByBranch(repoRoot, branch string) (ticketID string, fields map[string]string, found bool, err error) {
-	tickets, err := tkQuery(repoRoot, ".")
+	tickets, err := queryTickets(repoRoot, ".")
 	if err != nil {
 		return "", nil, false, err
 	}
@@ -121,7 +121,7 @@ func reconcileStackedBase(repoRoot, hostTool, ticketID, base, prRef string) (*Re
 // in-progress set (not a run-state ledger) — no ledger dependency to fall
 // back from in the first place. Mirrors reconciliation.py's reconcile.
 func Reconcile(repoRoot string) (*ReconciliationReport, error) {
-	inProgress, err := tkQuery(repoRoot, `select(.status=="in_progress")`)
+	inProgress, err := queryTickets(repoRoot, `select(.status=="in_progress")`)
 	if err != nil {
 		return nil, err
 	}

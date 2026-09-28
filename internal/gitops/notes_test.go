@@ -1,9 +1,13 @@
 package gitops
 
 import (
+	"errors"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/Christophe1997/goalship/internal/ticket"
 )
 
 // sampleShowOutput is the exact shape a real `tk show` prints (captured
@@ -125,4 +129,125 @@ func TestNoteFieldsForTicket_NoNotesYet_ReturnsEmptyMap(t *testing.T) {
 	if len(fields) != 0 {
 		t.Errorf("fields = %v, want empty", fields)
 	}
+}
+
+func ticketIDs(t *testing.T, repoRoot string) []string {
+	t.Helper()
+	tickets, err := queryTickets(repoRoot, ".")
+	if err != nil {
+		t.Fatalf("queryTickets: %v", err)
+	}
+	var ids []string
+	for _, tk := range tickets {
+		id, _ := tk["id"].(string)
+		ids = append(ids, id)
+	}
+	return ids
+}
+
+func TestQueryTickets_HonorsTicketsDirEnvOutsideRepoRoot(t *testing.T) {
+	repoRoot := newTestRepo(t)
+	t.Setenv(ticket.TicketsDirEnv, filepath.Join(t.TempDir(), "elsewhere"))
+	ticketID := tkCreate(t, repoRoot, "Lives outside the repo")
+
+	if got := ticketIDs(t, repoRoot); !reflect.DeepEqual(got, []string{ticketID}) {
+		t.Errorf("ticket ids = %v, want [%s] from the TICKETS_DIR override", got, ticketID)
+	}
+}
+
+func TestQueryTickets_DoesNotSearchParentDirectories(t *testing.T) {
+	parent := t.TempDir()
+	repoRoot := filepath.Join(parent, "work")
+	mustMkdirAll(t, repoRoot)
+	parentTicket := tkCreate(t, parent, "Only the parent has a .tickets directory")
+
+	tickets, err := queryTickets(repoRoot, ".")
+	for _, tk := range tickets {
+		if tk["id"] == parentTicket {
+			t.Fatalf("queryTickets found %s in a parent directory of the repo root", parentTicket)
+		}
+	}
+	if err == nil && len(tickets) != 0 {
+		t.Errorf("tickets = %v, want none from a repo root without its own .tickets", tickets)
+	}
+}
+
+func TestNoteFieldsForTicket_HonorsTicketsDirEnv(t *testing.T) {
+	repoRoot := newTestRepo(t)
+	t.Setenv(ticket.TicketsDirEnv, filepath.Join(t.TempDir(), "elsewhere"))
+	ticketID := tkCreate(t, repoRoot, "Lives outside the repo")
+	tkAddNote(t, repoRoot, ticketID, "branch: feat/elsewhere")
+
+	fields, err := noteFieldsForTicket(repoRoot, ticketID)
+	if err != nil {
+		t.Fatalf("noteFieldsForTicket: %v", err)
+	}
+	if fields["branch"] != "feat/elsewhere" {
+		t.Errorf("fields = %v, want branch feat/elsewhere read from the TICKETS_DIR override", fields)
+	}
+}
+
+// writeMalformedTicket writes a ticket that strict ticket.Load rejects (a
+// duplicated status key) but that the query still lists and whose notes tk
+// show would still print — the shape one hand-edited file can take.
+func writeMalformedTicket(t *testing.T, repoRoot, id string) {
+	t.Helper()
+	dir := ticket.ResolveTicketsDir(repoRoot)
+	mustMkdirAll(t, dir)
+	writeFile(t, filepath.Join(dir, id+".md"), "---\nid: "+id+"\nstatus: in_progress\nstatus: open\ndeps: []\n---\n# Malformed\n\n## Notes\n\n**2026-09-28T00:00:00Z**\n\nbranch: feat/malformed\npr: PR9\n")
+	if _, err := ticket.Load(filepath.Join(dir, id+".md")); err == nil {
+		t.Fatal("fixture is not malformed: strict Load accepted it")
+	}
+}
+
+func TestNoteFieldsForTicket_MalformedFrontmatter_StillReadsNotes(t *testing.T) {
+	repoRoot := newTestRepo(t)
+	writeMalformedTicket(t, repoRoot, "bad-1")
+	healthy := tkCreate(t, repoRoot, "Healthy neighbour")
+	tkAddNote(t, repoRoot, healthy, "branch: feat/healthy")
+
+	if got := ticketIDs(t, repoRoot); !containsString(got, "bad-1") {
+		t.Fatalf("query ids = %v, want the malformed ticket still listed", got)
+	}
+	fields, err := noteFieldsForTicket(repoRoot, "bad-1")
+	if err != nil {
+		t.Fatalf("noteFieldsForTicket on a malformed ticket: %v", err)
+	}
+	if fields["branch"] != "feat/malformed" || fields["pr"] != "PR9" {
+		t.Errorf("fields = %v, want branch feat/malformed and pr PR9", fields)
+	}
+	if other, err := noteFieldsForTicket(repoRoot, healthy); err != nil || other["branch"] != "feat/healthy" {
+		t.Errorf("healthy ticket fields = %v, err = %v; one malformed neighbour must not break it", other, err)
+	}
+}
+
+func TestNoteFieldsForTicket_UnknownTicket_ErrorsWithErrNotFound(t *testing.T) {
+	repoRoot := newTestRepo(t)
+	tkCreate(t, repoRoot, "Some ticket")
+
+	_, err := noteFieldsForTicket(repoRoot, "no-such-ticket")
+	if !errors.Is(err, ticket.ErrNotFound) {
+		t.Errorf("err = %v, want ticket.ErrNotFound", err)
+	}
+}
+
+func TestNoteFieldsForTicket_AmbiguousTicket_ErrorsWithErrAmbiguous(t *testing.T) {
+	repoRoot := newTestRepo(t)
+	first := tkCreate(t, repoRoot, "First")
+	tkCreate(t, repoRoot, "Second")
+	sharedPrefix := first[:strings.Index(first, "-")+1]
+
+	_, err := noteFieldsForTicket(repoRoot, sharedPrefix)
+	if !errors.Is(err, ticket.ErrAmbiguous) {
+		t.Errorf("err = %v, want ticket.ErrAmbiguous for the shared prefix %q", err, sharedPrefix)
+	}
+}
+
+func containsString(items []string, want string) bool {
+	for _, item := range items {
+		if item == want {
+			return true
+		}
+	}
+	return false
 }
