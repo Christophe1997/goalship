@@ -96,6 +96,69 @@ func TestSweepBranches_MergedButIsOpenPRBase_NotEligible(t *testing.T) {
 	}
 }
 
+// A fork PR's base is a real branch in this repo: deleting it would close
+// the fork PR, so it must stay protected even though the fork PR's head is
+// not a branch here.
+func TestSweepBranches_MergedButIsForkPRBase_NotEligible(t *testing.T) {
+	repoRoot := newTestRepo(t)
+	ticketID := tkCreate(t, repoRoot, "base of a fork pr")
+	tkStart(t, repoRoot, ticketID)
+	tkAddNote(t, repoRoot, ticketID, "branch: feat/fork-target\npr: PR1")
+	tkClose(t, repoRoot, ticketID)
+
+	openPRsJSON := `[{"number":2,"url":"https://github.com/o/r/pull/2","baseRefName":"feat/fork-target","headRefName":"contrib","isCrossRepository":true}]`
+	fakeGHSweep(t, openPRsJSON, map[string]string{"PR1": "MERGED"})
+
+	got, err := SweepBranches(repoRoot, "gh", false)
+	if err != nil {
+		t.Fatalf("SweepBranches: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("got = %+v, want none: branch is a fork PR's base", got)
+	}
+}
+
+// A fork PR's head lives in the contributor's repo, so a same-named local
+// ticket branch is unrelated to it.
+func TestSweepBranches_MergedBranchNamedLikeForkPRHead_StillEligible(t *testing.T) {
+	repoRoot := newTestRepo(t)
+	ticketID := tkCreate(t, repoRoot, "name clash with fork head")
+	tkStart(t, repoRoot, ticketID)
+	tkAddNote(t, repoRoot, ticketID, "branch: feat/clash\npr: PR1")
+	tkClose(t, repoRoot, ticketID)
+
+	openPRsJSON := `[{"number":2,"url":"https://github.com/o/r/pull/2","baseRefName":"main","headRefName":"feat/clash","isCrossRepository":true}]`
+	fakeGHSweep(t, openPRsJSON, map[string]string{"PR1": "MERGED"})
+
+	got, err := SweepBranches(repoRoot, "gh", false)
+	if err != nil {
+		t.Fatalf("SweepBranches: %v", err)
+	}
+	want := []SweepCandidate{{TicketID: ticketID, Branch: "feat/clash", PRRef: "PR1", Outcome: SweepOutcomeWouldDelete}}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got = %+v, want %+v", got, want)
+	}
+}
+
+func TestSweepBranches_ForkPRFromItsMainIntoMain_DoesNotHardFail(t *testing.T) {
+	repoRoot := newTestRepo(t)
+	ticketID := tkCreate(t, repoRoot, "shipped")
+	tkStart(t, repoRoot, ticketID)
+	tkAddNote(t, repoRoot, ticketID, "branch: feat/sweep-me\npr: PR1")
+	tkClose(t, repoRoot, ticketID)
+
+	openPRsJSON := `[{"number":2,"url":"https://github.com/o/r/pull/2","baseRefName":"main","headRefName":"main","isCrossRepository":true}]`
+	fakeGHSweep(t, openPRsJSON, map[string]string{"PR1": "MERGED"})
+
+	got, err := SweepBranches(repoRoot, "gh", false)
+	if err != nil {
+		t.Fatalf("SweepBranches: %v", err)
+	}
+	if len(got) != 1 || got[0].Branch != "feat/sweep-me" {
+		t.Errorf("got = %+v, want feat/sweep-me still evaluated", got)
+	}
+}
+
 func TestSweepBranches_BranchNoteWithoutPRNote_NotEligible(t *testing.T) {
 	repoRoot := newTestRepo(t)
 	ticketID := tkCreate(t, repoRoot, "no pr note")

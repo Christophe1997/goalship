@@ -8,12 +8,15 @@ import (
 	"strings"
 )
 
-// OpenPR is one open PR/MR as reported by ListOpenPRs.
+// OpenPR is one open PR/MR as reported by ListOpenPRs. For a CrossRepo PR,
+// Branch names a branch in the contributor's repo, not this one, while Base
+// is always a branch in this repo.
 type OpenPR struct {
-	Number int
-	URL    string
-	Branch string
-	Base   string
+	Number    int
+	URL       string
+	Branch    string
+	Base      string
+	CrossRepo bool
 }
 
 // ghOpenPRsLimit bounds a single `gh pr list` call. A result count equal to
@@ -49,17 +52,18 @@ func listOpenPRsGH(repoRoot string) ([]OpenPR, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), hostToolTimeout)
 	defer cancel()
 	out, err := runContext(ctx, repoRoot, "gh", "pr", "list",
-		"--state", "open", "--json", "number,url,baseRefName,headRefName",
+		"--state", "open", "--json", "number,url,baseRefName,headRefName,isCrossRepository",
 		"--limit", strconv.Itoa(ghOpenPRsLimit))
 	if err != nil {
 		return nil, err
 	}
 
 	var raw []struct {
-		Number      int    `json:"number"`
-		URL         string `json:"url"`
-		BaseRefName string `json:"baseRefName"`
-		HeadRefName string `json:"headRefName"`
+		Number            int    `json:"number"`
+		URL               string `json:"url"`
+		BaseRefName       string `json:"baseRefName"`
+		HeadRefName       string `json:"headRefName"`
+		IsCrossRepository bool   `json:"isCrossRepository"`
 	}
 	if err := json.Unmarshal([]byte(out), &raw); err != nil {
 		return nil, fmt.Errorf("gitops: parsing gh pr list output: %w", err)
@@ -70,7 +74,7 @@ func listOpenPRsGH(repoRoot string) ([]OpenPR, error) {
 
 	prs := make([]OpenPR, len(raw))
 	for i, r := range raw {
-		prs[i] = OpenPR{Number: r.Number, URL: r.URL, Branch: r.HeadRefName, Base: r.BaseRefName}
+		prs[i] = OpenPR{Number: r.Number, URL: r.URL, Branch: r.HeadRefName, Base: r.BaseRefName, CrossRepo: r.IsCrossRepository}
 	}
 	return prs, nil
 }
@@ -87,16 +91,24 @@ func listOpenPRsGlab(repoRoot string) ([]OpenPR, error) {
 		}
 
 		var raw []struct {
-			IID          int    `json:"iid"`
-			WebURL       string `json:"web_url"`
-			SourceBranch string `json:"source_branch"`
-			TargetBranch string `json:"target_branch"`
+			IID             int    `json:"iid"`
+			WebURL          string `json:"web_url"`
+			SourceBranch    string `json:"source_branch"`
+			TargetBranch    string `json:"target_branch"`
+			SourceProjectID int64  `json:"source_project_id"`
+			TargetProjectID int64  `json:"target_project_id"`
 		}
 		if err := json.Unmarshal([]byte(out), &raw); err != nil {
 			return nil, fmt.Errorf("gitops: parsing glab mr list output: %w", err)
 		}
 		for _, r := range raw {
-			prs = append(prs, OpenPR{Number: r.IID, URL: r.WebURL, Branch: r.SourceBranch, Base: r.TargetBranch})
+			prs = append(prs, OpenPR{
+				Number:    r.IID,
+				URL:       r.WebURL,
+				Branch:    r.SourceBranch,
+				Base:      r.TargetBranch,
+				CrossRepo: r.SourceProjectID != r.TargetProjectID,
+			})
 		}
 		if len(raw) < glabOpenPRsPageSize {
 			return prs, nil
@@ -115,6 +127,10 @@ func listOpenPRsGlab(repoRoot string) ([]OpenPR, error) {
 // ValidateOpenPRGraph and TopologicalMergeOrder both need this same
 // validated walk — one graph pass computes both instead of one validating
 // and the other redoing the walk to also keep the order.
+//
+// A CrossRepo PR's head is not a branch in this repo, so it never owns a
+// branch (it can't be self-referential, cause fan-in, or be depended on) but
+// still lands after the PR owning its base.
 func validateAndOrderOpenPRGraph(prs []OpenPR) ([]OpenPR, error) {
 	branchToPRs := map[string][]int{}
 	for i, pr := range prs {
@@ -123,6 +139,9 @@ func validateAndOrderOpenPRGraph(prs []OpenPR) ([]OpenPR, error) {
 		}
 		if pr.Base == "" {
 			return nil, fmt.Errorf("gitops: PR #%d has an empty base branch", pr.Number)
+		}
+		if pr.CrossRepo {
+			continue
 		}
 		if pr.Base == pr.Branch {
 			return nil, fmt.Errorf("gitops: PR #%d is self-referential: base and branch are both %q", pr.Number, pr.Branch)

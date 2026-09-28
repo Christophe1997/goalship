@@ -45,11 +45,14 @@ func SweepBranches(repoRoot, hostTool string, execute bool) ([]SweepCandidate, e
 
 	// A branch that's any open PR's base OR head is excluded: it can carry
 	// a merged PR in its history and still be a different, currently-open
-	// PR's live head (e.g. reused after its own PR merged).
+	// PR's live head (e.g. reused after its own PR merged). A cross-repo
+	// PR's head is not a branch here, but its base still is.
 	baseOrHead := make(map[string]bool, len(prs)*2)
 	for _, pr := range prs {
 		baseOrHead[pr.Base] = true
-		baseOrHead[pr.Branch] = true
+		if !pr.CrossRepo {
+			baseOrHead[pr.Branch] = true
+		}
 	}
 
 	candidates := make([]SweepCandidate, 0, len(tickets))

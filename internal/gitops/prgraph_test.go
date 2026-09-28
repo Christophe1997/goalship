@@ -3,6 +3,8 @@ package gitops
 import (
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -82,7 +84,79 @@ func TestValidateOpenPRGraph_FanInAmbiguity_Errors(t *testing.T) {
 	}
 }
 
+func TestValidateOpenPRGraph_CrossRepoPRWithSameHeadAndBase_NoError(t *testing.T) {
+	prs := []OpenPR{{Number: 1, Branch: "main", Base: "main", CrossRepo: true}}
+	if err := ValidateOpenPRGraph(prs); err != nil {
+		t.Errorf("err = %v, want nil: a fork's own main into upstream main is not self-referential", err)
+	}
+}
+
+func TestValidateOpenPRGraph_CrossRepoPRsSharingHead_NoFanIn(t *testing.T) {
+	prs := []OpenPR{
+		{Number: 1, Branch: "main", Base: "main", CrossRepo: true},
+		{Number: 2, Branch: "main", Base: "develop", CrossRepo: true},
+		{Number: 3, Branch: "feat/a", Base: "main"},
+	}
+	if err := ValidateOpenPRGraph(prs); err != nil {
+		t.Errorf("err = %v, want nil: fork heads live in another repo and cannot be this repo's branch owners", err)
+	}
+}
+
+func TestValidateOpenPRGraph_CrossRepoHeadSharedWithInRepoHead_NoFanIn(t *testing.T) {
+	prs := []OpenPR{
+		{Number: 1, Branch: "feat/x", Base: "main"},
+		{Number: 2, Branch: "feat/x", Base: "main", CrossRepo: true},
+		{Number: 3, Branch: "feat/y", Base: "feat/x"},
+	}
+	if err := ValidateOpenPRGraph(prs); err != nil {
+		t.Errorf("err = %v, want nil: only the in-repo PR owns head feat/x", err)
+	}
+}
+
+func TestValidateOpenPRGraph_InRepoFanInAlongsideCrossRepoPR_StillErrors(t *testing.T) {
+	prs := []OpenPR{
+		{Number: 1, Branch: "feat/x", Base: "main"},
+		{Number: 2, Branch: "feat/x", Base: "develop"},
+		{Number: 3, Branch: "feat/y", Base: "feat/x"},
+		{Number: 4, Branch: "main", Base: "main", CrossRepo: true},
+	}
+	err := ValidateOpenPRGraph(prs)
+	if err == nil || !strings.Contains(err.Error(), "fan-in") {
+		t.Fatalf("err = %v, want an error naming fan-in ambiguity", err)
+	}
+}
+
+func TestValidateOpenPRGraph_CrossRepoPRWithEmptyField_StillErrors(t *testing.T) {
+	for name, pr := range map[string]OpenPR{
+		"empty branch": {Number: 1, Branch: "", Base: "main", CrossRepo: true},
+		"empty base":   {Number: 1, Branch: "feat/a", Base: "", CrossRepo: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			err := ValidateOpenPRGraph([]OpenPR{pr})
+			if err == nil || !strings.Contains(err.Error(), "empty") {
+				t.Fatalf("err = %v, want an error naming an empty field", err)
+			}
+		})
+	}
+}
+
 // ---- TopologicalMergeOrder ----
+
+func TestTopologicalMergeOrder_CrossRepoPR_IncludedAndOrderedAfterItsBaseOwner(t *testing.T) {
+	forkMain := OpenPR{Number: 2, Branch: "main", Base: "main", CrossRepo: true}
+	forkOnStack := OpenPR{Number: 3, Branch: "contrib", Base: "feat/a", CrossRepo: true}
+	root := OpenPR{Number: 1, Branch: "feat/a", Base: "main"}
+	prs := []OpenPR{forkMain, forkOnStack, root}
+
+	got, err := TopologicalMergeOrder(prs)
+	if err != nil {
+		t.Fatalf("TopologicalMergeOrder: %v", err)
+	}
+	want := []OpenPR{forkMain, root, forkOnStack}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got = %+v, want %+v", got, want)
+	}
+}
 
 func TestTopologicalMergeOrder_LinearStack_RootFirst(t *testing.T) {
 	top := OpenPR{Number: 3, Branch: "feat/c", Base: "feat/b"}
@@ -186,9 +260,30 @@ func TestListOpenPRs_GH_ArgvAndParse(t *testing.T) {
 		t.Errorf("prs = %+v, want %+v", prs, want)
 	}
 
-	wantArgv := []string{"pr", "list", "--state", "open", "--json", "number,url,baseRefName,headRefName", "--limit", "1000"}
+	wantArgv := []string{"pr", "list", "--state", "open", "--json", "number,url,baseRefName,headRefName,isCrossRepository", "--limit", "1000"}
 	if got := readArgv(t, argvFile); !reflect.DeepEqual(got, wantArgv) {
 		t.Errorf("argv = %v, want %v", got, wantArgv)
+	}
+}
+
+func TestListOpenPRs_GH_IsCrossRepository_SetsCrossRepo(t *testing.T) {
+	withFakeHostTool(t, "gh", `echo '[`+
+		`{"number":1,"url":"u1","baseRefName":"main","headRefName":"feat/a","isCrossRepository":false},`+
+		`{"number":2,"url":"u2","baseRefName":"main","headRefName":"main","isCrossRepository":true},`+
+		`{"number":3,"url":"u3","baseRefName":"main","headRefName":"feat/c"}`+
+		`]'`)
+
+	prs, err := ListOpenPRs(t.TempDir(), "gh")
+	if err != nil {
+		t.Fatalf("ListOpenPRs: %v", err)
+	}
+	want := []OpenPR{
+		{Number: 1, URL: "u1", Branch: "feat/a", Base: "main", CrossRepo: false},
+		{Number: 2, URL: "u2", Branch: "main", Base: "main", CrossRepo: true},
+		{Number: 3, URL: "u3", Branch: "feat/c", Base: "main", CrossRepo: false},
+	}
+	if !reflect.DeepEqual(prs, want) {
+		t.Errorf("prs = %+v, want %+v", prs, want)
 	}
 }
 
@@ -278,6 +373,27 @@ func TestListOpenPRs_Glab_ArgvAndParse(t *testing.T) {
 	}
 }
 
+func TestListOpenPRs_Glab_ProjectIDs_SetCrossRepoWhenSourceDiffersFromTarget(t *testing.T) {
+	withFakeHostTool(t, "glab", `echo '[`+
+		`{"iid":1,"web_url":"u1","source_branch":"feat/a","target_branch":"main","source_project_id":7,"target_project_id":7},`+
+		`{"iid":2,"web_url":"u2","source_branch":"main","target_branch":"main","source_project_id":99,"target_project_id":7},`+
+		`{"iid":3,"web_url":"u3","source_branch":"feat/c","target_branch":"main"}`+
+		`]'`)
+
+	prs, err := ListOpenPRs(t.TempDir(), "glab")
+	if err != nil {
+		t.Fatalf("ListOpenPRs: %v", err)
+	}
+	want := []OpenPR{
+		{Number: 1, URL: "u1", Branch: "feat/a", Base: "main", CrossRepo: false},
+		{Number: 2, URL: "u2", Branch: "main", Base: "main", CrossRepo: true},
+		{Number: 3, URL: "u3", Branch: "feat/c", Base: "main", CrossRepo: false},
+	}
+	if !reflect.DeepEqual(prs, want) {
+		t.Errorf("prs = %+v, want %+v", prs, want)
+	}
+}
+
 func TestListOpenPRs_Glab_ZeroOpenPRs_ReturnsEmptySlice(t *testing.T) {
 	withFakeHostTool(t, "glab", `echo '[]'`)
 	prs, err := ListOpenPRs(t.TempDir(), "glab")
@@ -317,6 +433,27 @@ esac
 	wantArgv := []string{"mr", "list", "-F", "json", "--per-page", "100", "--page", "2"}
 	if got := readArgv(t, argvFile); !reflect.DeepEqual(got, wantArgv) {
 		t.Errorf("last argv = %v, want %v", got, wantArgv)
+	}
+}
+
+func TestListOpenPRs_Glab_NeverShortPage_ReturnsPaginationCapError(t *testing.T) {
+	callsFile := filepath.Join(t.TempDir(), "calls.txt")
+	withFakeHostTool(t, "glab", "echo call >> \""+callsFile+"\"\necho '"+glabMRsJSON(1, glabOpenPRsPageSize)+"'")
+
+	prs, err := ListOpenPRs(t.TempDir(), "glab")
+	if err == nil || !strings.Contains(err.Error(), "exceeded") {
+		t.Fatalf("err = %v, want an error naming the exceeded pagination cap", err)
+	}
+	if prs != nil {
+		t.Errorf("prs has %d entries, want nil: a partial listing must never be returned", len(prs))
+	}
+
+	data, readErr := os.ReadFile(callsFile)
+	if readErr != nil {
+		t.Fatalf("read calls file: %v", readErr)
+	}
+	if got := strings.Count(string(data), "call"); got != glabOpenPRsMaxPages {
+		t.Errorf("glab invoked %d times, want exactly the cap of %d", got, glabOpenPRsMaxPages)
 	}
 }
 
