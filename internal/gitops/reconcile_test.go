@@ -18,13 +18,8 @@ import (
 // isn't enough.
 func fakeGH(t *testing.T, authExit int, prStates map[string]string) {
 	t.Helper()
-	var b strings.Builder
-	fmt.Fprintf(&b, "case \"$1\" in\n  auth) exit %d ;;\n  pr)\n    case \"$3\" in\n", authExit)
-	for ref, state := range prStates {
-		fmt.Fprintf(&b, "      %s) echo %s ;;\n", ref, state)
-	}
-	b.WriteString("      *) exit 1 ;;\n    esac\n    ;;\nesac\n")
-	withFakeHostTool(t, "gh", b.String())
+	script := fmt.Sprintf("case \"$1\" in\n  auth) exit %d ;;\n  pr)\n%s    ;;\nesac\n", authExit, prStateCaseBlock(prStates))
+	withFakeHostTool(t, "gh", script)
 }
 
 // pathWithoutHostTools returns a PATH value with a real `tk` (symlinked

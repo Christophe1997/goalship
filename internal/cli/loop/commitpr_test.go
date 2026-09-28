@@ -143,7 +143,10 @@ func TestCreatePRCmd_HostFailure_ReturnsError(t *testing.T) {
 }
 
 func TestRetargetPRCmd_PrintsNothingOnSuccess(t *testing.T) {
-	withFakeHostTool(t, "gh", `exit 0`)
+	withFakeHostTool(t, "gh", `case "$2" in
+  view) echo OPEN ;;
+  edit) exit 0 ;;
+esac`)
 	repoRoot := newLoopTestRepo(t)
 
 	out := execCmd(t, NewRetargetPRCmd(), []string{repoRoot, "gh", "42", "main"})

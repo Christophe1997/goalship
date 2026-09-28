@@ -39,12 +39,16 @@ go install github.com/Christophe1997/goalship/cmd/goalship@latest
 ## Scope
 
 `goalship` is a faithful 1:1 port of bash `tk`'s command surface plus
-`loop_runner.py`'s existing CLI surface, with one addition: the `review`
-checkpoint. It is not an occasion to add new ticket-tool or loop capability
-beyond that.
+`loop_runner.py`'s existing CLI surface, with two additions: the `review`
+checkpoint, and a small set of safety/graph primitives that operate over
+the existing loop mechanics' own PR and branch state — `merge-order`, a
+hardened `retarget-pr` precondition, and `sweep-branches` (see issue #18).
+It is not an occasion to add new ticket-tool or loop capability beyond
+that.
 
-- **In scope:** every `tk` command, every `loop_runner.py` subcommand, and
-  the `review`/`review-status` checkpoint.
+- **In scope:** every `tk` command, every `loop_runner.py` subcommand, the
+  `review`/`review-status` checkpoint, and the PR/branch safety primitives
+  named above.
 - **Out of scope:** an MCP server or any other persistent listening process;
   migrating existing ticket IDs to the new ID shape; deleting or renaming
   tickets through the wizard; run-scoping the ticket store itself.

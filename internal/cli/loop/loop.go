@@ -24,6 +24,7 @@ func NewCmd() *cobra.Command {
 		NewCommitLandedCmd(),
 		NewRunBranchCmd(),
 		NewFindPRCmd(),
+		NewMergeOrderCmd(),
 		NewClaimCmd(),
 		NewCommitCmd(),
 		NewHeadSHACmd(),
@@ -32,6 +33,7 @@ func NewCmd() *cobra.Command {
 		NewRetargetPRCmd(),
 		NewShipCmd(),
 		NewResetCmd(),
+		NewSweepBranchesCmd(),
 	)
 
 	return cmd

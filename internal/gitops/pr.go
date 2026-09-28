@@ -88,6 +88,15 @@ func CreatePullRequest(repoRoot, hostTool, branch, base, title, body string) (st
 // dependency) instead of the now-gone branch. Mirrors branching.py's
 // retarget_pull_request.
 func RetargetPullRequest(repoRoot, hostTool, prRef, newBase string) error {
+	return retargetPullRequest(repoRoot, hostTool, prRef, newBase, PRState)
+}
+
+// retargetPullRequest is RetargetPullRequest with its PR-state lookup
+// factored out as a PRStateFunc, mirroring resolveBase's composition. A
+// closed/merged/undeterminable PR is refused with a plain error before any
+// edit call is made, rather than surfacing the host tool's own
+// edit-rejection.
+func retargetPullRequest(repoRoot, hostTool, prRef, newBase string, prState PRStateFunc) error {
 	var argv []string
 	switch hostTool {
 	case "gh":
@@ -96,6 +105,14 @@ func RetargetPullRequest(repoRoot, hostTool, prRef, newBase string) error {
 		argv = []string{"glab", "mr", "update", prRef, "--target-branch", newBase}
 	default:
 		return fmt.Errorf("gitops: unsupported host tool %q", hostTool)
+	}
+
+	state, ok := prState(repoRoot, hostTool, prRef)
+	if !ok {
+		return fmt.Errorf("gitops: cannot retarget %s %q: could not determine PR state", hostTool, prRef)
+	}
+	if state != "open" {
+		return fmt.Errorf("gitops: cannot retarget %s %q: not open (state=%q)", hostTool, prRef, state)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), hostToolTimeout)

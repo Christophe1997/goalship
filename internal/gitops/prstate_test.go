@@ -1,8 +1,10 @@
 package gitops
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -17,6 +19,22 @@ func withFakeHostTool(t *testing.T, name, script string) {
 		t.Fatalf("write fake %s: %v", name, err)
 	}
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
+// prStateCaseBlock renders the `case "$3" in <ref>) echo <state> ;; ... *)
+// exit 1 ;; esac` shell body a fake `gh` binary uses to answer a `pr view
+// <ref>` call with a ref-specific state, shared by every fake-gh builder
+// that needs to simulate `PRState` lookups (e.g. reconcile_test.go's
+// fakeGH, sweepbranches_test.go's fakeGHSweep) alongside their own,
+// differing outer dispatch.
+func prStateCaseBlock(prStates map[string]string) string {
+	var b strings.Builder
+	b.WriteString("case \"$3\" in\n")
+	for ref, state := range prStates {
+		fmt.Fprintf(&b, "  %s) echo %s ;;\n", ref, state)
+	}
+	b.WriteString("  *) exit 1 ;;\nesac\n")
+	return b.String()
 }
 
 func TestPRState_GHOpen(t *testing.T) {

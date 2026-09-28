@@ -3,6 +3,7 @@ package gitops
 import (
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -20,6 +21,22 @@ func captureArgvHostTool(t *testing.T, name, outputScript string) (argvFile stri
 	script := "printf '%s\\n' \"$@\" > \"" + argvFile + "\"\n" + outputScript
 	withFakeHostTool(t, name, script)
 	return argvFile
+}
+
+// warmFakeHostTool runs name once with a throwaway argument that matches no
+// case branch, before a test starts timing a tight hostToolTimeout budget.
+// A freshly written executable's very first invocation costs far more than
+// its steady-state runtime, which would otherwise dominate a short timeout
+// budget's first (state-lookup) call in a two-call test and make it flaky;
+// paying that cost here, outside the timed section, keeps the timing
+// assertions meaningful.
+func warmFakeHostTool(t *testing.T, name string) {
+	t.Helper()
+	path, err := exec.LookPath(name)
+	if err != nil {
+		t.Fatalf("warm fake %s: %v", name, err)
+	}
+	_ = exec.Command(path, "warmup").Run()
 }
 
 func readArgv(t *testing.T, path string) []string {
@@ -163,7 +180,10 @@ func TestCreatePullRequest_UnsupportedHostTool_ErrorsWithoutShellingOut(t *testi
 }
 
 func TestRetargetPullRequest_GH_Argv(t *testing.T) {
-	argvFile := captureArgvHostTool(t, "gh", `exit 0`)
+	argvFile := captureArgvHostTool(t, "gh", `case "$2" in
+  view) echo OPEN ;;
+  edit) exit 0 ;;
+esac`)
 
 	if err := RetargetPullRequest(t.TempDir(), "gh", "123", "main"); err != nil {
 		t.Fatalf("RetargetPullRequest: %v", err)
@@ -176,7 +196,10 @@ func TestRetargetPullRequest_GH_Argv(t *testing.T) {
 }
 
 func TestRetargetPullRequest_Glab_Argv(t *testing.T) {
-	argvFile := captureArgvHostTool(t, "glab", `exit 0`)
+	argvFile := captureArgvHostTool(t, "glab", `case "$2" in
+  view) echo '{"state": "opened"}' ;;
+  update) exit 0 ;;
+esac`)
 
 	if err := RetargetPullRequest(t.TempDir(), "glab", "123", "main"); err != nil {
 		t.Fatalf("RetargetPullRequest: %v", err)
@@ -189,7 +212,10 @@ func TestRetargetPullRequest_Glab_Argv(t *testing.T) {
 }
 
 func TestRetargetPullRequest_NonzeroExit_ReturnsExitError(t *testing.T) {
-	withFakeHostTool(t, "gh", `exit 7`)
+	withFakeHostTool(t, "gh", `case "$2" in
+  view) echo OPEN ;;
+  edit) exit 7 ;;
+esac`)
 	err := RetargetPullRequest(t.TempDir(), "gh", "123", "main")
 	var exitErr *ExitError
 	if !errors.As(err, &exitErr) {
@@ -203,6 +229,71 @@ func TestRetargetPullRequest_NonzeroExit_ReturnsExitError(t *testing.T) {
 func TestRetargetPullRequest_UnsupportedHostTool_ErrorsWithoutShellingOut(t *testing.T) {
 	if err := RetargetPullRequest(t.TempDir(), "hub", "123", "main"); err == nil {
 		t.Fatal("err = nil, want an error for an unsupported host tool")
+	}
+}
+
+func TestRetargetPullRequest_ClosedState_Refused(t *testing.T) {
+	argvFile := captureArgvHostTool(t, "gh", `case "$2" in
+  view) echo CLOSED ;;
+  edit) exit 0 ;;
+esac`)
+
+	err := RetargetPullRequest(t.TempDir(), "gh", "123", "main")
+	if err == nil {
+		t.Fatal("err = nil, want a refusal error for a closed PR")
+	}
+	var exitErr *ExitError
+	if errors.As(err, &exitErr) {
+		t.Fatalf("err = %v (*ExitError), want a plain refusal error, not the host tool's own edit-rejection", err)
+	}
+
+	// argvFile is overwritten by each invocation of the fake binary; if it
+	// still holds the view call's argv, the edit call never ran.
+	want := []string{"pr", "view", "123", "--json", "state", "-q", ".state"}
+	if got := readArgv(t, argvFile); !reflect.DeepEqual(got, want) {
+		t.Errorf("argv = %v, want %v (edit must never have been called)", got, want)
+	}
+}
+
+func TestRetargetPullRequest_MergedState_Refused(t *testing.T) {
+	argvFile := captureArgvHostTool(t, "glab", `case "$2" in
+  view) echo '{"state": "merged"}' ;;
+  update) exit 0 ;;
+esac`)
+
+	err := RetargetPullRequest(t.TempDir(), "glab", "123", "main")
+	if err == nil {
+		t.Fatal("err = nil, want a refusal error for a merged PR")
+	}
+	var exitErr *ExitError
+	if errors.As(err, &exitErr) {
+		t.Fatalf("err = %v (*ExitError), want a plain refusal error", err)
+	}
+
+	want := []string{"mr", "view", "123", "-F", "json"}
+	if got := readArgv(t, argvFile); !reflect.DeepEqual(got, want) {
+		t.Errorf("argv = %v, want %v (update must never have been called)", got, want)
+	}
+}
+
+func TestRetargetPullRequest_StateLookupFails_Refused(t *testing.T) {
+	argvFile := captureArgvHostTool(t, "gh", `case "$2" in
+  view) exit 1 ;;
+  edit) exit 0 ;;
+esac`)
+
+	err := RetargetPullRequest(t.TempDir(), "gh", "123", "main")
+	if err == nil {
+		t.Fatal("err = nil, want a refusal error when PR state cannot be determined")
+	}
+	var exitErr *ExitError
+	if errors.As(err, &exitErr) {
+		t.Fatalf("err = %v (*ExitError), want a plain refusal error", err)
+	}
+
+	want := []string{"pr", "view", "123", "--json", "state", "-q", ".state"}
+	if got := readArgv(t, argvFile); !reflect.DeepEqual(got, want) {
+		t.Errorf("argv = %v, want %v (edit must never have been called)", got, want)
 	}
 }
 
@@ -236,17 +327,31 @@ func TestCreatePullRequest_TimeoutKillsHungHostTool(t *testing.T) {
 
 func TestRetargetPullRequest_TimeoutKillsHungHostTool(t *testing.T) {
 	orig := hostToolTimeout
-	hostToolTimeout = 20 * time.Millisecond
+	// 300ms rather than the 20ms other single-call timeout tests use: the
+	// state lookup (view) must itself complete inside the budget before the
+	// edit call's hang is exercised, and even warmed up this still needs
+	// more margin than a single already-hanging call does.
+	hostToolTimeout = 300 * time.Millisecond
 	t.Cleanup(func() { hostToolTimeout = orig })
 
-	withFakeHostTool(t, "glab", `sleep 5`)
+	// Answers the state lookup (view) immediately with an open state, and
+	// hangs only on the edit call (update) — this proves the edit-call
+	// watchdog specifically, not the lookup call's. `exec sleep 5` (rather
+	// than a plain `sleep 5`) replaces the shell process instead of forking
+	// it, so killing the timed-out child on cancellation can't leave an
+	// orphaned sleep holding the stdout/stderr pipe open behind it.
+	withFakeHostTool(t, "glab", `case "$2" in
+  view) echo '{"state": "opened"}' ;;
+  update) exec sleep 5 ;;
+esac`)
+	warmFakeHostTool(t, "glab")
 
 	start := time.Now()
 	err := RetargetPullRequest(t.TempDir(), "glab", "123", "main")
 	elapsed := time.Since(start)
 
 	if elapsed > 2*time.Second {
-		t.Fatalf("RetargetPullRequest took %v, want it killed near the 20ms timeout instead of left hanging", elapsed)
+		t.Fatalf("RetargetPullRequest took %v, want it killed near the 300ms timeout instead of left hanging", elapsed)
 	}
 	var exitErr *ExitError
 	if !errors.As(err, &exitErr) {
@@ -254,5 +359,37 @@ func TestRetargetPullRequest_TimeoutKillsHungHostTool(t *testing.T) {
 	}
 	if !exitErr.TimedOut {
 		t.Errorf("TimedOut = false, want true")
+	}
+}
+
+// TestRetargetPullRequest_StateLookupTimeout_Refused proves a hung state
+// lookup is refused via the plain-error path, not *ExitError: PRState uses
+// runUnchecked internally, which collapses a timeout into an ordinary
+// lookup failure (ok == false) rather than propagating a timeout
+// *ExitError the way the edit call's own watchdog does (see
+// TestRetargetPullRequest_TimeoutKillsHungHostTool above).
+func TestRetargetPullRequest_StateLookupTimeout_Refused(t *testing.T) {
+	orig := hostToolTimeout
+	hostToolTimeout = 20 * time.Millisecond
+	t.Cleanup(func() { hostToolTimeout = orig })
+
+	withFakeHostTool(t, "gh", `case "$2" in
+  view) exec sleep 5 ;;
+  edit) exit 0 ;;
+esac`)
+
+	start := time.Now()
+	err := RetargetPullRequest(t.TempDir(), "gh", "123", "main")
+	elapsed := time.Since(start)
+
+	if elapsed > 2*time.Second {
+		t.Fatalf("RetargetPullRequest took %v, want it killed near the 20ms timeout instead of left hanging", elapsed)
+	}
+	if err == nil {
+		t.Fatal("err = nil, want a refusal error when the state lookup hangs")
+	}
+	var exitErr *ExitError
+	if errors.As(err, &exitErr) {
+		t.Fatalf("err = %v (*ExitError), want a plain refusal error: a lookup timeout collapses into ok=false, not a propagated ExitError", err)
 	}
 }
