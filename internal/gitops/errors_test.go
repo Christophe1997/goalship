@@ -66,3 +66,41 @@ func TestRunContext_DeadlineExceeded_KillsProcessAndReportsTimeoutDistinctly(t *
 		t.Errorf("TimedOut = false, want true")
 	}
 }
+
+// orphaningSleep is a hung host tool whose sleep is a forked child rather
+// than the killed process itself, so the child outlives the watchdog's
+// kill and keeps the stdout/stderr pipes open (issue #29).
+var orphaningSleep = []string{"sh", "-c", "sleep 5 & wait"}
+
+func TestRunContext_DeadlineExceeded_ReturnsDespiteOrphanHoldingPipes(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	_, err := runContext(ctx, t.TempDir(), orphaningSleep...)
+	elapsed := time.Since(start)
+
+	if elapsed > 2*time.Second {
+		t.Fatalf("runContext took %v, want it to return near the 20ms deadline even with an orphaned child", elapsed)
+	}
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) || !exitErr.TimedOut {
+		t.Errorf("err = %v, want *ExitError with TimedOut true", err)
+	}
+}
+
+func TestRunUnchecked_DeadlineExceeded_ReturnsDespiteOrphanHoldingPipes(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	_, exitCode := runUnchecked(ctx, t.TempDir(), orphaningSleep...)
+	elapsed := time.Since(start)
+
+	if elapsed > 2*time.Second {
+		t.Fatalf("runUnchecked took %v, want it to return near the 20ms deadline even with an orphaned child", elapsed)
+	}
+	if exitCode == 0 {
+		t.Errorf("exitCode = 0, want nonzero for a killed process")
+	}
+}

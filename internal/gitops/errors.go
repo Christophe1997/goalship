@@ -13,7 +13,21 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"time"
 )
+
+// orphanPipeGrace bounds how long a killed host tool's surviving children
+// (credential helper, pager, browser launcher) may hold its stdout/stderr
+// pipes open before os/exec force-closes them; without it cmd.Run blocks
+// until those children exit, long past the watchdog's deadline.
+const orphanPipeGrace = 500 * time.Millisecond
+
+func commandContext(ctx context.Context, dir string, argv ...string) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	cmd.Dir = dir
+	cmd.WaitDelay = orphanPipeGrace
+	return cmd
+}
 
 // ExitError wraps a failed subprocess invocation with the argv run, its
 // exit code, and its stderr — the uniform shape every git/gh/glab call in
@@ -64,8 +78,7 @@ func run(dir string, argv ...string) (string, error) {
 // so this doesn't depend on exactly how exec.CommandContext wraps a
 // kill-on-cancel failure.
 func runContext(ctx context.Context, dir string, argv ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
-	cmd.Dir = dir
+	cmd := commandContext(ctx, dir, argv...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -89,8 +102,7 @@ func runContext(ctx context.Context, dir string, argv ...string) (string, error)
 // timeout) as "state unknown" rather than a hard error — so this reports a
 // bare exit code instead of wrapping non-zero exits into an error.
 func runUnchecked(ctx context.Context, dir string, argv ...string) (stdout string, exitCode int) {
-	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
-	cmd.Dir = dir
+	cmd := commandContext(ctx, dir, argv...)
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	if err := cmd.Run(); err != nil {
