@@ -1,12 +1,16 @@
 package gitops
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/Christophe1997/goalship/internal/ticket"
 )
 
 // fakeGH installs a fake `gh` on PATH (via withFakeHostTool) that answers
@@ -22,39 +26,41 @@ func fakeGH(t *testing.T, authExit int, prStates map[string]string) {
 	withFakeHostTool(t, "gh", script)
 }
 
-// pathWithoutHostTools returns a PATH value with a real `tk` (symlinked
-// into an isolated directory, since tk and gh/glab share a bin directory on
-// this machine) plus git's own directory, but no gh/glab anywhere on it —
-// used to prove reconcile's needs_host_lookup guard actually skips host-tool
-// detection, and to simulate "neither tool is installed" for auth_failure.
+// pathWithoutHostTools returns a PATH value with git's own directory but no
+// gh/glab anywhere on it — used to prove reconcile's needs_host_lookup guard
+// actually skips host-tool detection, and to simulate "neither tool is
+// installed" for auth_failure.
 func pathWithoutHostTools(t *testing.T) string {
 	t.Helper()
-	tkPath, err := exec.LookPath("tk")
-	if err != nil {
-		t.Fatalf("LookPath tk: %v", err)
-	}
 	gitPath, err := exec.LookPath("git")
 	if err != nil {
 		t.Fatalf("LookPath git: %v", err)
 	}
-	dir := t.TempDir()
-	if err := os.Symlink(tkPath, filepath.Join(dir, "tk")); err != nil {
-		t.Fatalf("symlink tk: %v", err)
-	}
-	return strings.Join([]string{dir, filepath.Dir(gitPath), "/bin"}, string(os.PathListSeparator))
+	return strings.Join([]string{filepath.Dir(gitPath), "/bin"}, string(os.PathListSeparator))
 }
 
 func ticketStatus(t *testing.T, repoRoot, ticketID string) string {
 	t.Helper()
-	matches, err := tkQuery(repoRoot, fmt.Sprintf(`select(.id=="%s")`, ticketID))
+	matches, err := queryTickets(repoRoot, fmt.Sprintf(`select(.id=="%s")`, ticketID))
 	if err != nil {
-		t.Fatalf("tkQuery: %v", err)
+		t.Fatalf("queryTickets: %v", err)
 	}
 	if len(matches) != 1 {
-		t.Fatalf("tkQuery(%s) = %d matches, want 1", ticketID, len(matches))
+		t.Fatalf("queryTickets(%s) = %d matches, want 1", ticketID, len(matches))
 	}
 	status, _ := matches[0]["status"].(string)
 	return status
+}
+
+func requireNote(t *testing.T, repoRoot, ticketID, want string) {
+	t.Helper()
+	notes, err := readNotes(repoRoot, ticketID)
+	if err != nil {
+		t.Fatalf("readNotes: %v", err)
+	}
+	if !containsString(notes, want) {
+		t.Errorf("notes = %q, want one equal to %q", notes, want)
+	}
 }
 
 func TestReconcile_ClosedMerged(t *testing.T) {
@@ -81,6 +87,7 @@ func TestReconcile_ClosedMerged(t *testing.T) {
 	if got := ticketStatus(t, repoRoot, ticketID); got != "closed" {
 		t.Errorf("ticket status = %q, want closed", got)
 	}
+	requireNote(t, repoRoot, ticketID, "Reconciliation: PR PR1 merged externally; closing.")
 }
 
 func TestReconcile_FailedClosedUnmerged(t *testing.T) {
@@ -104,6 +111,7 @@ func TestReconcile_FailedClosedUnmerged(t *testing.T) {
 	if got := ticketStatus(t, repoRoot, ticketID); got != "open" {
 		t.Errorf("ticket status = %q, want open (reopened)", got)
 	}
+	requireNote(t, repoRoot, ticketID, "Reconciliation: PR PR1 closed without merging; left open.")
 }
 
 func TestReconcile_NoRecoverableState_SkipsHostLookup(t *testing.T) {
@@ -225,19 +233,7 @@ func TestReconcile_BlockedStaleBase(t *testing.T) {
 		t.Errorf("action = %+v, want %+v", report.Actions[0], want)
 	}
 
-	notes, err := tkShowNotes(repoRoot, ticketID)
-	if err != nil {
-		t.Fatalf("tkShowNotes: %v", err)
-	}
-	found := false
-	for _, n := range notes {
-		if strings.Contains(n, "base feat/base closed without merging") {
-			found = true
-		}
-	}
-	if !found {
-		t.Errorf("notes = %v, want one mentioning the stale base", notes)
-	}
+	requireNote(t, repoRoot, ticketID, "Reconciliation: base feat/base closed without merging; blocked.")
 	if got := ticketStatus(t, repoRoot, ticketID); got != "in_progress" {
 		t.Errorf("ticket status = %q, want unchanged in_progress — blocked tickets stay put, excluded from tk ready by their own unresolved base", got)
 	}
@@ -376,5 +372,77 @@ func TestReconcile_AuthFailure_BadCredential_ResurfacesEveryCall(t *testing.T) {
 		if len(report.Actions) != 0 {
 			t.Errorf("call %d: Actions = %v, want none", i, report.Actions)
 		}
+	}
+}
+
+func TestReconcile_WritesLandInTicketsDirOverride(t *testing.T) {
+	repoRoot := newTestRepo(t)
+	override := filepath.Join(t.TempDir(), "elsewhere")
+	t.Setenv(ticket.TicketsDirEnv, override)
+	ticketID := tkCreate(t, repoRoot, "shipped")
+	tkStart(t, repoRoot, ticketID)
+	tkAddNote(t, repoRoot, ticketID, "branch: feat/x\npr: PR1")
+	fakeGH(t, 0, map[string]string{"PR1": "MERGED"})
+
+	if _, err := Reconcile(repoRoot); err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+
+	loaded, err := ticket.Load(filepath.Join(override, ticketID+".md"))
+	if err != nil {
+		t.Fatalf("Load from override: %v", err)
+	}
+	if loaded.Status != "closed" || !strings.Contains(loaded.Body, "merged externally; closing.") {
+		t.Errorf("override ticket status %q, body %q; want closed with the reconciliation note", loaded.Status, loaded.Body)
+	}
+	if _, err := os.Stat(filepath.Join(repoRoot, ".tickets")); !os.IsNotExist(err) {
+		t.Errorf("repoRoot/.tickets exists (err=%v); reconcile must not write outside the override", err)
+	}
+}
+
+func TestReconcile_NoteCarriesUTCTimestampMarker(t *testing.T) {
+	repoRoot := newTestRepo(t)
+	ticketID := tkCreate(t, repoRoot, "shipped")
+	tkStart(t, repoRoot, ticketID)
+	tkAddNote(t, repoRoot, ticketID, "branch: feat/x\npr: PR1")
+	fakeGH(t, 0, map[string]string{"PR1": "MERGED"})
+
+	if _, err := Reconcile(repoRoot); err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+
+	raw, err := os.ReadFile(filepath.Join(ticket.ResolveTicketsDir(repoRoot), ticketID+".md"))
+	if err != nil {
+		t.Fatalf("read ticket: %v", err)
+	}
+	marker := regexp.MustCompile(`(?m)^\*\*\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\*\*\n\nReconciliation: PR PR1 merged externally; closing\.$`)
+	if !marker.Match(raw) {
+		t.Errorf("ticket file lacks a timestamp-marked reconciliation note:\n%s", raw)
+	}
+}
+
+func TestReconcile_MalformedTicketWriteFails_LeavesFileUnchanged(t *testing.T) {
+	repoRoot := newTestRepo(t)
+	writeMalformedTicket(t, repoRoot, "bad-1")
+	path := filepath.Join(ticket.ResolveTicketsDir(repoRoot), "bad-1.md")
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fakeGH(t, 0, map[string]string{"PR9": "MERGED"})
+
+	_, err = Reconcile(repoRoot)
+	if err == nil {
+		t.Fatal("Reconcile: want an error when the ticket to close cannot be loaded, got nil")
+	}
+	if !strings.Contains(err.Error(), "bad-1") {
+		t.Errorf("error = %q, want it to name the ticket", err)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Errorf("failed reconcile changed the ticket file:\n%s", after)
 	}
 }

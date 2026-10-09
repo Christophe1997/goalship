@@ -105,15 +105,8 @@ func recordClaimNote(repoRoot, ticketID, branchName, baseRef, trunkBranch, claim
 	}
 	lines = append(lines, "claim_sha: "+claimSHA)
 
-	ticketsDir := ticket.ResolveTicketsDir(repoRoot)
-	path, err := ticket.Resolve(ticketsDir, ticketID)
-	if err != nil {
-		return err
-	}
-	t, err := ticket.Load(path)
-	if err != nil {
-		return err
-	}
-	t.AddNote(strings.Join(lines, "\n"))
-	return t.Save(path)
+	_, err := ticket.Update(ticket.ResolveTicketsDir(repoRoot), ticketID, func(t *ticket.Ticket) {
+		t.AddNote(strings.Join(lines, "\n"))
+	})
+	return err
 }

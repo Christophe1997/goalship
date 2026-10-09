@@ -3,8 +3,11 @@ package gitops
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"regexp"
 	"strings"
+
+	"github.com/Christophe1997/goalship/internal/ticket"
 )
 
 var (
@@ -23,25 +26,18 @@ func jqString(s string) string {
 	return string(b)
 }
 
-// tkQuery runs `tk query <jqFilter>` against the real installed `tk`
-// binary and parses its newline-delimited JSON output — mirrors
-// reconciliation.py's tk_query. Ticket-graph query capability doesn't yet
-// exist as a Go-native package in this repo, so this shells out directly
-// rather than depending on not-yet-landed work.
-func tkQuery(repoRoot, jqFilter string) ([]map[string]any, error) {
-	out, err := run(repoRoot, "tk", "query", jqFilter)
+// queryTickets runs jqFilter over every ticket in the repo's tickets
+// directory and decodes each match — mirrors reconciliation.py's tk_query.
+func queryTickets(repoRoot, jqFilter string) ([]map[string]any, error) {
+	lines, err := ticket.Query(ticket.ResolveTicketsDir(repoRoot), jqFilter)
 	if err != nil {
 		return nil, err
 	}
 	var results []map[string]any
-	for _, line := range strings.Split(out, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
+	for _, line := range lines {
 		var obj map[string]any
-		if err := json.Unmarshal([]byte(line), &obj); err != nil {
-			return nil, fmt.Errorf("gitops: parse tk query output: %w", err)
+		if err := json.Unmarshal(line, &obj); err != nil {
+			return nil, fmt.Errorf("gitops: parse ticket query output: %w", err)
 		}
 		results = append(results, obj)
 	}
@@ -65,28 +61,40 @@ func stringSlice(v any) []string {
 	return out
 }
 
-// notesSection extracts the raw text of a `tk show` transcript's
-// "## Notes" section, up through (not including) the next "## " heading —
-// mirrors reconciliation.py's _notes_section.
-func notesSection(showOutput string) string {
-	loc := notesHeadingRE.FindStringIndex(showOutput)
+// notesSection extracts the raw text of a ticket file's "## Notes" section,
+// up through (not including) the next "## " heading — mirrors
+// reconciliation.py's _notes_section.
+func notesSection(ticketText string) string {
+	loc := notesHeadingRE.FindStringIndex(ticketText)
 	if loc == nil {
 		return ""
 	}
-	rest := showOutput[loc[1]:]
+	rest := ticketText[loc[1]:]
 	if nextLoc := nextHeadingRE.FindStringIndex(rest); nextLoc != nil {
 		return rest[:nextLoc[0]]
 	}
 	return rest
 }
 
-// tkShowNotes returns the raw text of each note on ticketID, oldest first.
-func tkShowNotes(repoRoot, ticketID string) ([]string, error) {
-	out, err := run(repoRoot, "tk", "show", ticketID)
+// readTicketFile is the seam note reads go through, reassigned in tests to
+// fail a chosen read.
+var readTicketFile = os.ReadFile
+
+// readNotes returns the raw text of each note on ticketID, oldest first. It
+// reads the ticket file as written rather than through strict ticket.Load:
+// the query that lists tickets tolerates a malformed one, and `tk show`
+// printed it regardless, so one hand-edited ticket must not abort a whole
+// reconcile or sweep.
+func readNotes(repoRoot, ticketID string) ([]string, error) {
+	path, err := ticket.Resolve(ticket.ResolveTicketsDir(repoRoot), ticketID)
 	if err != nil {
 		return nil, err
 	}
-	section := notesSection(out)
+	raw, err := readTicketFile(path)
+	if err != nil {
+		return nil, err
+	}
+	section := notesSection(string(raw))
 	markers := noteMarkerRE.FindAllStringIndex(section, -1)
 	notes := make([]string, 0, len(markers))
 	for i, m := range markers {
@@ -130,7 +138,7 @@ func parseKeyValueNote(noteText string) map[string]string {
 // override an earlier one's (a claim-time branch: note, then a ship-time
 // note that adds pr:/sha:).
 func noteFieldsForTicket(repoRoot, ticketID string) (map[string]string, error) {
-	notes, err := tkShowNotes(repoRoot, ticketID)
+	notes, err := readNotes(repoRoot, ticketID)
 	if err != nil {
 		return nil, err
 	}

@@ -15,20 +15,11 @@ import (
 // Goes directly through internal/ticket rather than shelling out to `tk
 // add-note`/`tk close` the way the Python original does.
 func runShip(repoRoot, ticketID, branch, prURL, sha string) error {
-	ticketsDir := ticket.ResolveTicketsDir(repoRoot)
-	path, err := ticket.Resolve(ticketsDir, ticketID)
+	_, err := ticket.Update(ticket.ResolveTicketsDir(repoRoot), ticketID, func(t *ticket.Ticket) {
+		t.AddNote(fmt.Sprintf("branch: %s\npr: %s\nsha: %s", branch, prURL, sha))
+		t.Status = "closed"
+	})
 	if err != nil {
-		return fmt.Errorf("loop ship: %w", err)
-	}
-	t, err := ticket.Load(path)
-	if err != nil {
-		return fmt.Errorf("loop ship: %w", err)
-	}
-
-	t.AddNote(fmt.Sprintf("branch: %s\npr: %s\nsha: %s", branch, prURL, sha))
-	t.Status = "closed"
-
-	if err := t.Save(path); err != nil {
 		return fmt.Errorf("loop ship: %w", err)
 	}
 	return nil

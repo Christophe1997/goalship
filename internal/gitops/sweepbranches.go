@@ -39,7 +39,7 @@ type SweepCandidate struct {
 // after some branches were already deleted names them, since no candidate
 // list is returned alongside it.
 func SweepBranches(repoRoot, hostTool string, execute bool) ([]SweepCandidate, error) {
-	tickets, err := tkQuery(repoRoot, ".")
+	tickets, err := queryTickets(repoRoot, ".")
 	if err != nil {
 		return nil, err
 	}

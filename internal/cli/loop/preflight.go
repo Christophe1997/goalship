@@ -155,10 +155,10 @@ type preflightResult struct {
 	Failures    []string `json:"failures"`
 }
 
-// runPreflight mirrors preflight.py's run_preflight: preconditions — tk
-// present, remote configured, clean tree, and (only when PR creation will
-// run) an authenticated gh/glab. Never counted against the failure cap:
-// this fails the whole run, not one ticket.
+// runPreflight mirrors preflight.py's run_preflight: preconditions —
+// remote configured, clean tree, and (only when PR creation will run) an
+// authenticated gh/glab. Never counted against the failure cap: this
+// fails the whole run, not one ticket.
 //
 // trunkBranchOverride, when non-empty, replaces resolveTrunkBranch's
 // autodetection outright rather than feeding into it — git has no signal
@@ -171,10 +171,6 @@ type preflightResult struct {
 // itself couldn't run, not that a precondition was unmet.
 func runPreflight(repoRoot string, willCreatePRs bool, trunkBranchOverride string) (preflightResult, error) {
 	var failures []string
-
-	if _, err := exec.LookPath("tk"); err != nil {
-		failures = append(failures, "tk (ticket) not found on PATH")
-	}
 
 	remoteURL := gitRemoteURL(repoRoot)
 	if remoteURL == "" {
