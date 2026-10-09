@@ -1,6 +1,10 @@
 package gitops
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/Christophe1997/goalship/internal/ticket"
+)
 
 // Reconciliation outcomes — mirrors reconciliation.py's ReconciliationAction
 // outcome strings exactly (loop_runner.py's callers switch on these literal
@@ -37,25 +41,22 @@ type ReconciliationReport struct {
 	AuthFailure string
 }
 
-// tkTicketClose, tkTicketReopen, and tkTicketAddNote are thin `tk`
-// subprocess wrappers — mirrors reconciliation.py's tk_close, tk_reopen,
-// and tk_add_note. Named distinctly from helpers_test.go's identically
-// themed but differently-signatured (*testing.T-first) fixture helpers of
-// almost the same name, which those tests keep using directly; Go has no
-// overloading, so this package can't hold both under the exact same name.
-func tkTicketClose(repoRoot, ticketID string) error {
-	_, err := run(repoRoot, "tk", "close", ticketID)
-	return err
-}
-
-func tkTicketReopen(repoRoot, ticketID string) error {
-	_, err := run(repoRoot, "tk", "reopen", ticketID)
-	return err
-}
-
-func tkTicketAddNote(repoRoot, ticketID, text string) error {
-	_, err := run(repoRoot, "tk", "add-note", ticketID, text)
-	return err
+// recordOutcome saves a reconcile outcome's note and status change in one
+// write, so a crash between them cannot leave a closed ticket with no
+// explanation. An empty note or status leaves that part untouched.
+func recordOutcome(repoRoot, ticketID, note, status string) error {
+	_, err := ticket.Update(ticket.ResolveTicketsDir(repoRoot), ticketID, func(t *ticket.Ticket) {
+		if note != "" {
+			t.AddNote(note)
+		}
+		if status != "" {
+			t.Status = status
+		}
+	})
+	if err != nil {
+		return fmt.Errorf("reconcile: update ticket %s: %w", ticketID, err)
+	}
+	return nil
 }
 
 // findTicketByBranch returns the ticket whose merged note fields carry
@@ -107,7 +108,7 @@ func reconcileStackedBase(repoRoot, hostTool, ticketID, base, prRef string) (*Re
 		return &ReconciliationAction{TicketID: ticketID, Outcome: OutcomeRetargetBaseMerged, Detail: base, PRRef: prRef}, nil
 	case "closed":
 		note := fmt.Sprintf("Reconciliation: base %s closed without merging; blocked.", base)
-		if err := tkTicketAddNote(repoRoot, ticketID, note); err != nil {
+		if err := recordOutcome(repoRoot, ticketID, note, ""); err != nil {
 			return nil, err
 		}
 		return &ReconciliationAction{TicketID: ticketID, Outcome: OutcomeBlockedStaleBase, Detail: base}, nil
@@ -183,19 +184,13 @@ func Reconcile(repoRoot string) (*ReconciliationReport, error) {
 		switch state {
 		case "merged":
 			note := fmt.Sprintf("Reconciliation: PR %s merged externally; closing.", prRef)
-			if err := tkTicketAddNote(repoRoot, ticketID, note); err != nil {
-				return nil, err
-			}
-			if err := tkTicketClose(repoRoot, ticketID); err != nil {
+			if err := recordOutcome(repoRoot, ticketID, note, "closed"); err != nil {
 				return nil, err
 			}
 			actions = append(actions, ReconciliationAction{TicketID: ticketID, Outcome: OutcomeClosedMerged, Detail: prRef})
 		case "closed":
 			note := fmt.Sprintf("Reconciliation: PR %s closed without merging; left open.", prRef)
-			if err := tkTicketAddNote(repoRoot, ticketID, note); err != nil {
-				return nil, err
-			}
-			if err := tkTicketReopen(repoRoot, ticketID); err != nil {
+			if err := recordOutcome(repoRoot, ticketID, note, "open"); err != nil {
 				return nil, err
 			}
 			actions = append(actions, ReconciliationAction{TicketID: ticketID, Outcome: OutcomeFailedClosedUnmerged, Detail: prRef})
@@ -215,7 +210,7 @@ func Reconcile(repoRoot string) (*ReconciliationReport, error) {
 				// already run, meaning a crash happened between
 				// record_ship_note and cmd_ship's follow-up tk_close —
 				// finish the close the crash interrupted.
-				if err := tkTicketClose(repoRoot, ticketID); err != nil {
+				if err := recordOutcome(repoRoot, ticketID, "", "closed"); err != nil {
 					return nil, err
 				}
 				actions = append(actions, ReconciliationAction{TicketID: ticketID, Outcome: OutcomeClosedShipNoteOrphaned, Detail: branch, PRRef: prRef})

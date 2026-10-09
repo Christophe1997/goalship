@@ -194,7 +194,7 @@ func writeMalformedTicket(t *testing.T, repoRoot, id string) {
 	t.Helper()
 	dir := ticket.ResolveTicketsDir(repoRoot)
 	mustMkdirAll(t, dir)
-	writeFile(t, filepath.Join(dir, id+".md"), "---\nid: "+id+"\nstatus: in_progress\nstatus: open\ndeps: []\n---\n# Malformed\n\n## Notes\n\n**2026-09-28T00:00:00Z**\n\nbranch: feat/malformed\npr: PR9\n")
+	writeFile(t, filepath.Join(dir, id+".md"), "---\nid: "+id+"\nstatus: open\nstatus: in_progress\ndeps: []\n---\n# Malformed\n\n## Notes\n\n**2026-09-28T00:00:00Z**\n\nbranch: feat/malformed\npr: PR9\n")
 	if _, err := ticket.Load(filepath.Join(dir, id+".md")); err == nil {
 		t.Fatal("fixture is not malformed: strict Load accepted it")
 	}
