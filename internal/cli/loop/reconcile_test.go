@@ -25,7 +25,7 @@ func tkAddNote(t *testing.T, repoRoot, ticketID, text string) {
 	tickettest.AddNote(t, repoRoot, ticketID, text)
 }
 
-// pathWithoutHostTools returns a PATH with git's directory but no gh/glab
+// pathWithoutHostTools returns a PATH holding only git — no gh/glab
 // anywhere on it.
 func pathWithoutHostTools(t *testing.T) string {
 	t.Helper()
@@ -33,7 +33,12 @@ func pathWithoutHostTools(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("LookPath git: %v", err)
 	}
-	return strings.Join([]string{filepath.Dir(gitPath), "/bin"}, string(os.PathListSeparator))
+	// A dir holding only git: on Ubuntu runners gh shares /usr/bin with git.
+	dir := t.TempDir()
+	if err := os.Symlink(gitPath, filepath.Join(dir, "git")); err != nil {
+		t.Fatalf("symlink git: %v", err)
+	}
+	return dir
 }
 
 func TestReconcileCmd_JSONShape_ClosedMerged(t *testing.T) {
