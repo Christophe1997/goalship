@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 )
 
@@ -90,6 +91,10 @@ func TestPreflightCmd_NoRemote_ReportsFailure(t *testing.T) {
 	}
 	if got.RemoteURL != nil {
 		t.Errorf("remote_url = %v, want null", got.RemoteURL)
+	}
+	want := []string{"no git remote 'origin' configured"}
+	if !slices.Equal(got.Failures, want) {
+		t.Errorf("failures = %v, want exactly %v", got.Failures, want)
 	}
 }
 
