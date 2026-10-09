@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"os/exec"
 	"runtime"
+	"sync"
 	"time"
 
 	"github.com/Christophe1997/goalship/internal/ledger"
@@ -118,7 +119,9 @@ func Run(ctx context.Context, opts Options) error {
 		done:        runCtx.Done(),
 	}
 	handler := newReviewHandler(token, state)
-	srv := &http.Server{Handler: handler}
+	unstarted := newUnstartedConns()
+	srv := &http.Server{Handler: handler, ConnState: unstarted.track}
+	srv.RegisterOnShutdown(unstarted.closeAll)
 
 	// Started unconditionally (barring the test-only DisableWatch escape
 	// hatch) and for the whole session, before srv.Serve ever accepts a
@@ -157,6 +160,39 @@ func Run(ctx context.Context, opts Options) error {
 			return fmt.Errorf("reviewserver: shutdown: %w", err)
 		}
 		return nil
+	}
+}
+
+// unstartedConns tracks connections accepted but not yet sending a request
+// (a client's spare pre-dialed conn, a browser preconnect). srv.Shutdown
+// treats such a conn as busy until it is ~5s old, so without closing them
+// explicitly Shutdown runs out shutdownTimeout and Run returns an error.
+type unstartedConns struct {
+	mu    sync.Mutex
+	conns map[net.Conn]struct{}
+}
+
+func newUnstartedConns() *unstartedConns {
+	return &unstartedConns{conns: make(map[net.Conn]struct{})}
+}
+
+func (u *unstartedConns) track(c net.Conn, state http.ConnState) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if state == http.StateNew {
+		u.conns[c] = struct{}{}
+	} else {
+		delete(u.conns, c)
+	}
+}
+
+// closeAll runs via RegisterOnShutdown, after Shutdown has closed the
+// listener, so no new conn can be accepted behind it.
+func (u *unstartedConns) closeAll() {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	for c := range u.conns {
+		c.Close()
 	}
 }
 
