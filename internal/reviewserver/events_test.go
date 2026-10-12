@@ -4,8 +4,10 @@ import (
 	"bufio"
 	"context"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -334,5 +336,45 @@ func TestRun_DisableWatch_StatusStillReflectsChangesAfterReject(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for Run to shut down")
+	}
+}
+
+// TestShutdown_UnstartedConnection_DoesNotHang covers a connection that is
+// accepted but never sends a request — an HTTP client's spare pre-dialed
+// conn, or a browser preconnect. The raw conn is dialed before a normal
+// request so Serve has accepted it (in order) by the time that request is
+// answered.
+func TestShutdown_UnstartedConnection_DoesNotHang(t *testing.T) {
+	baseURL, cancel, done := runForSSETest(t, "")
+	defer cancel()
+
+	u, err := url.Parse(baseURL)
+	if err != nil {
+		t.Fatalf("parse %q: %v", baseURL, err)
+	}
+	raw, err := net.Dial("tcp", u.Host)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer raw.Close()
+
+	resp, err := http.Get(sseURL(baseURL, "/api/status"))
+	if err != nil {
+		t.Fatalf("GET /api/status: %v", err)
+	}
+	resp.Body.Close()
+
+	cancel()
+	start := time.Now()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Run with an unstarted connection open: %v", err)
+		}
+		if elapsed := time.Since(start); elapsed > time.Second {
+			t.Errorf("Run took %v to shut down; want well under the 5s shutdown timeout", elapsed)
+		}
+	case <-time.After(6 * time.Second):
+		t.Fatal("Run did not return within 6s of cancel")
 	}
 }

@@ -26,7 +26,7 @@ func fakeGH(t *testing.T, authExit int, prStates map[string]string) {
 	withFakeHostTool(t, "gh", script)
 }
 
-// pathWithoutHostTools returns a PATH value with git's own directory but no
+// pathWithoutHostTools returns a PATH value holding only git — no
 // gh/glab anywhere on it — used to prove reconcile's needs_host_lookup guard
 // actually skips host-tool detection, and to simulate "neither tool is
 // installed" for auth_failure.
@@ -36,7 +36,12 @@ func pathWithoutHostTools(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("LookPath git: %v", err)
 	}
-	return strings.Join([]string{filepath.Dir(gitPath), "/bin"}, string(os.PathListSeparator))
+	// A dir holding only git: on Ubuntu runners gh shares /usr/bin with git.
+	dir := t.TempDir()
+	if err := os.Symlink(gitPath, filepath.Join(dir, "git")); err != nil {
+		t.Fatalf("symlink git: %v", err)
+	}
+	return dir
 }
 
 func ticketStatus(t *testing.T, repoRoot, ticketID string) string {
