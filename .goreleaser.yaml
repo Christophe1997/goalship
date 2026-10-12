@@ -29,3 +29,4 @@ changelog:
       - "^docs"
       - "^test"
       - "^chore"
+      - "^Merge pull request"
