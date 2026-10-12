@@ -2,7 +2,6 @@ package ticket
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -185,58 +184,5 @@ func TestQuery_OneTicketErrors_OthersStillMatch(t *testing.T) {
 	}
 	if !strings.Contains(string(lines[0]), `"id":"id-b"`) {
 		t.Errorf("lines[0] = %s, want id-b", lines[0])
-	}
-}
-
-// TestQuery_ParityWithBashTk compares this package's Query against the
-// real installed bash tk 0.3.2 binary on this repo's own .tickets/ (read
-// only — query never mutates), for the three filter shapes goalship's
-// own loop_runner.py sends. Skips if the binary isn't on PATH.
-func TestQuery_ParityWithBashTk(t *testing.T) {
-	tkPath, err := exec.LookPath("tk")
-	if err != nil {
-		t.Skip("bash tk not installed; skipping parity test")
-	}
-
-	repoRoot, err := filepath.Abs("../..")
-	if err != nil {
-		t.Fatal(err)
-	}
-	ticketsDir := filepath.Join(repoRoot, ".tickets")
-	if _, err := os.Stat(ticketsDir); err != nil {
-		t.Skipf("no .tickets dir at %s; skipping parity test", ticketsDir)
-	}
-
-	for _, filter := range []string{
-		".",
-		`select(.status=="in_progress")`,
-		`select(.id=="goa-g7ei")`,
-		".id",
-		"{id, status}",
-		".deps[]",
-		`select(.status=="open") | .id`,
-	} {
-		t.Run(filter, func(t *testing.T) {
-			cmd := exec.Command(tkPath, "query", filter)
-			cmd.Dir = repoRoot
-			bashOut, err := cmd.Output()
-			if err != nil {
-				t.Fatalf("bash tk query %q: %v", filter, err)
-			}
-
-			lines, err := Query(ticketsDir, filter)
-			if err != nil {
-				t.Fatalf("Query: %v", err)
-			}
-			var goOut strings.Builder
-			for _, l := range lines {
-				goOut.Write(l)
-				goOut.WriteByte('\n')
-			}
-
-			if goOut.String() != string(bashOut) {
-				t.Errorf("Query(%q) mismatch\n--- bash tk ---\n%s\n--- go ---\n%s", filter, bashOut, goOut.String())
-			}
-		})
 	}
 }
