@@ -318,3 +318,22 @@ func TestLedgerCmd_TicketsDirOverrideMeansNoRunFolder(t *testing.T) {
 		t.Errorf(".tickets exists (err %v), want none under TICKETS_DIR", err)
 	}
 }
+
+func TestLedgerCmd_RecreatedLedgerKeepsRunSummary(t *testing.T) {
+	t.Setenv(ticket.TicketsDirEnv, "")
+	repoRoot := newLoopTestRepo(t)
+	execCmd(t, NewLedgerCmd(), []string{repoRoot, "--run-id", "r1", "--goal", "G", "--terminal", "exhausted"})
+	if err := os.Remove(filepath.Join(repoRoot, ".goalship", "r1.json")); err != nil {
+		t.Fatal(err)
+	}
+
+	got := decodeLedgerJSON(t, execCmd(t, NewLedgerCmd(), []string{repoRoot, "--run-id", "r1"}))
+
+	summary := readRunSummary(t, repoRoot, "r1")
+	if summary.Goal != "G" || summary.Outcome == nil || *summary.Outcome != "exhausted" {
+		t.Errorf("run.json after ledger recreation = %+v, want goal G and outcome exhausted kept", summary)
+	}
+	if got.Goal != "G" || got.TerminalState == nil || *got.TerminalState != "exhausted" {
+		t.Errorf("recreated ledger = goal %q terminal %v, want them seeded from run.json", got.Goal, got.TerminalState)
+	}
+}

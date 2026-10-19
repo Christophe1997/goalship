@@ -120,7 +120,9 @@ func NewLedgerCmd() *cobra.Command {
 
 // assignRunFolder records a brand-new run's ticket folder in its ledger
 // (KTD3). Only `loop ledger`'s own run creation sets it, so a run's folder
-// can never be repointed after tickets land in it.
+// can never be repointed after tickets land in it. A folder that already
+// holds run.json (a committed run whose git-excluded ledger is gone) seeds
+// the recreated ledger's goal and outcome, so recovery never blanks them.
 func assignRunFolder(repoRoot string, state *ledger.RunState) error {
 	runDir, err := ticket.RunDir(ticket.ResolveTicketsDir(repoRoot), state.RunID)
 	if err != nil {
@@ -132,6 +134,15 @@ func assignRunFolder(repoRoot string, state *ledger.RunState) error {
 	}
 	rel = filepath.ToSlash(rel)
 	state.TicketsDir = &rel
+
+	existing, err := ticket.ReadRunSummary(runDir)
+	switch {
+	case err == nil:
+		state.Goal = existing.Goal
+		state.TerminalState = existing.Outcome
+	case !errors.Is(err, os.ErrNotExist):
+		return fmt.Errorf("loop ledger: %w", err)
+	}
 	return nil
 }
 
