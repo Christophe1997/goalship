@@ -120,7 +120,7 @@ func TestNewCreateCmd_RefusesRunParentFromLoose(t *testing.T) {
 func TestRunCreate_PopulatesAllRequiredFrontmatterFields(t *testing.T) {
 	dir := t.TempDir()
 
-	id, err := runCreate(dir, createOptions{title: "My Ticket", ticketType: "bug", priority: 1})
+	id, err := createLoose(dir, createOptions{title: "My Ticket", ticketType: "bug", priority: 1})
 	if err != nil {
 		t.Fatalf("runCreate: %v", err)
 	}
@@ -163,7 +163,7 @@ func TestRunCreate_PopulatesAllRequiredFrontmatterFields(t *testing.T) {
 func TestRunCreate_DefaultsTitleTypeAndPriority(t *testing.T) {
 	dir := t.TempDir()
 
-	id, err := runCreate(dir, createOptions{})
+	id, err := createLoose(dir, createOptions{})
 	if err != nil {
 		t.Fatalf("runCreate: %v", err)
 	}
@@ -179,7 +179,7 @@ func TestRunCreate_DefaultsTitleTypeAndPriority(t *testing.T) {
 func TestRunCreate_ExtraFieldsAndBodyLayout(t *testing.T) {
 	dir := t.TempDir()
 
-	id, err := runCreate(dir, createOptions{
+	id, err := createLoose(dir, createOptions{
 		title:       "T",
 		description: "the desc",
 		design:      "the design",
@@ -227,13 +227,13 @@ func TestRunCreate_ExtraFieldsAndBodyLayout(t *testing.T) {
 
 func TestRunCreate_ParentResolvesToFullIDViaSubstring(t *testing.T) {
 	dir := t.TempDir()
-	parentID, err := runCreate(dir, createOptions{title: "Parent"})
+	parentID, err := createLoose(dir, createOptions{title: "Parent"})
 	if err != nil {
 		t.Fatalf("runCreate parent: %v", err)
 	}
 	partial := parentID[len(parentID)-4:]
 
-	childID, err := runCreate(dir, createOptions{title: "Child", parent: partial})
+	childID, err := createLoose(dir, createOptions{title: "Child", parent: partial})
 	if err != nil {
 		t.Fatalf("runCreate child: %v", err)
 	}
@@ -250,7 +250,7 @@ func TestRunCreate_ParentResolvesToFullIDViaSubstring(t *testing.T) {
 func TestRunCreate_InvalidParentErrorsAndCreatesNoFile(t *testing.T) {
 	dir := t.TempDir()
 
-	_, err := runCreate(dir, createOptions{title: "Child", parent: "does-not-exist"})
+	_, err := createLoose(dir, createOptions{title: "Child", parent: "does-not-exist"})
 	if err == nil {
 		t.Fatal("runCreate: want error for unresolvable parent, got nil")
 	}
@@ -268,7 +268,7 @@ func TestRunCreate_CreatesTicketsDirIfMissing(t *testing.T) {
 	base := t.TempDir()
 	dir := filepath.Join(base, ".tickets")
 
-	if _, err := runCreate(dir, createOptions{title: "T"}); err != nil {
+	if _, err := createLoose(dir, createOptions{title: "T"}); err != nil {
 		t.Fatalf("runCreate: %v", err)
 	}
 	if info, err := os.Stat(dir); err != nil || !info.IsDir() {

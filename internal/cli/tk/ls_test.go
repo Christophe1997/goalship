@@ -103,8 +103,8 @@ func TestNewLsCmd_UnknownRunIDFailsAndCreatesNothing(t *testing.T) {
 func TestNewLsCmd_ListsAllByDefaultInFilenameOrder(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("TICKETS_DIR", dir)
-	idA, _ := runCreate(dir, createOptions{title: "Alpha", ticketType: "task", priority: 2})
-	idB, _ := runCreate(dir, createOptions{title: "Beta", ticketType: "task", priority: 2})
+	idA, _ := createLoose(dir, createOptions{title: "Alpha", ticketType: "task", priority: 2})
+	idB, _ := createLoose(dir, createOptions{title: "Beta", ticketType: "task", priority: 2})
 
 	cmd := NewLsCmd()
 	var out bytes.Buffer
@@ -126,8 +126,8 @@ func TestNewLsCmd_ListsAllByDefaultInFilenameOrder(t *testing.T) {
 func TestNewLsCmd_DepsSuffixFormat(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("TICKETS_DIR", dir)
-	depID, _ := runCreate(dir, createOptions{title: "Dep", ticketType: "task", priority: 2})
-	id, err := runCreate(dir, createOptions{title: "Main", ticketType: "task", priority: 2})
+	depID, _ := createLoose(dir, createOptions{title: "Dep", ticketType: "task", priority: 2})
+	id, err := createLoose(dir, createOptions{title: "Main", ticketType: "task", priority: 2})
 	if err != nil {
 		t.Fatalf("runCreate: %v", err)
 	}
@@ -151,8 +151,8 @@ func TestNewLsCmd_DepsSuffixFormat(t *testing.T) {
 func TestNewLsCmd_StatusFilter(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("TICKETS_DIR", dir)
-	openID, _ := runCreate(dir, createOptions{title: "Open one", ticketType: "task", priority: 2})
-	closedID, _ := runCreate(dir, createOptions{title: "Closed one", ticketType: "task", priority: 2})
+	openID, _ := createLoose(dir, createOptions{title: "Open one", ticketType: "task", priority: 2})
+	closedID, _ := createLoose(dir, createOptions{title: "Closed one", ticketType: "task", priority: 2})
 	if _, err := runStatus(dir, closedID, "closed"); err != nil {
 		t.Fatal(err)
 	}
@@ -177,11 +177,11 @@ func TestNewLsCmd_TagFilterUsesCapitalTFlag(t *testing.T) {
 	// filter (confirmed by reading cmd_ls's arg parsing directly).
 	dir := t.TempDir()
 	t.Setenv("TICKETS_DIR", dir)
-	uiID, err := runCreate(dir, createOptions{title: "UI ticket", ticketType: "task", priority: 2, tags: "ui,frontend"})
+	uiID, err := createLoose(dir, createOptions{title: "UI ticket", ticketType: "task", priority: 2, tags: "ui,frontend"})
 	if err != nil {
 		t.Fatalf("runCreate: %v", err)
 	}
-	otherID, err := runCreate(dir, createOptions{title: "Other ticket", ticketType: "task", priority: 2, tags: "backend"})
+	otherID, err := createLoose(dir, createOptions{title: "Other ticket", ticketType: "task", priority: 2, tags: "backend"})
 	if err != nil {
 		t.Fatalf("runCreate: %v", err)
 	}
@@ -204,11 +204,11 @@ func TestNewLsCmd_TagFilterUsesCapitalTFlag(t *testing.T) {
 func TestNewLsCmd_AssigneeFilter(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("TICKETS_DIR", dir)
-	aliceID, err := runCreate(dir, createOptions{title: "A", ticketType: "task", priority: 2, assignee: "alice"})
+	aliceID, err := createLoose(dir, createOptions{title: "A", ticketType: "task", priority: 2, assignee: "alice"})
 	if err != nil {
 		t.Fatalf("runCreate: %v", err)
 	}
-	bobID, err := runCreate(dir, createOptions{title: "B", ticketType: "task", priority: 2, assignee: "bob"})
+	bobID, err := createLoose(dir, createOptions{title: "B", ticketType: "task", priority: 2, assignee: "bob"})
 	if err != nil {
 		t.Fatalf("runCreate: %v", err)
 	}
@@ -272,7 +272,7 @@ func TestNewLsCmd_UnparseableTicketSkippedWithWarningNamingFile(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("TICKETS_DIR", dir)
 	writeRawTicket(t, dir, "not-a-ticket.md", "just some text, no frontmatter at all\n")
-	goodID, err := runCreate(dir, createOptions{title: "Good", ticketType: "task", priority: 2})
+	goodID, err := createLoose(dir, createOptions{title: "Good", ticketType: "task", priority: 2})
 	if err != nil {
 		t.Fatalf("runCreate: %v", err)
 	}

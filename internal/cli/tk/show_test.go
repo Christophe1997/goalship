@@ -44,7 +44,7 @@ func runShowForTest(t *testing.T, dir, id string) string {
 
 func TestRunShow_NoRelationshipsMatchesRawFileExactly(t *testing.T) {
 	dir := t.TempDir()
-	id, err := runCreate(dir, createOptions{title: "Solo", ticketType: "task", priority: 2})
+	id, err := createLoose(dir, createOptions{title: "Solo", ticketType: "task", priority: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,11 +61,11 @@ func TestRunShow_NoRelationshipsMatchesRawFileExactly(t *testing.T) {
 
 func TestRunShow_ParentLineAnnotatedWithTitleWhenKnown(t *testing.T) {
 	dir := t.TempDir()
-	parentID, err := runCreate(dir, createOptions{title: "The Parent"})
+	parentID, err := createLoose(dir, createOptions{title: "The Parent"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	childID, err := runCreate(dir, createOptions{title: "The Child", parent: parentID})
+	childID, err := createLoose(dir, createOptions{title: "The Child", parent: parentID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,7 +79,7 @@ func TestRunShow_ParentLineAnnotatedWithTitleWhenKnown(t *testing.T) {
 
 func TestRunShow_DanglingParentLineUnchanged(t *testing.T) {
 	dir := t.TempDir()
-	id, err := runCreate(dir, createOptions{title: "T"})
+	id, err := createLoose(dir, createOptions{title: "T"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,18 +96,18 @@ func TestRunShow_DanglingParentLineUnchanged(t *testing.T) {
 
 func TestRunShow_BlockersSectionListsUnresolvedDepsInOrder(t *testing.T) {
 	dir := t.TempDir()
-	closedDep, err := runCreate(dir, createOptions{title: "Closed dep"})
+	closedDep, err := createLoose(dir, createOptions{title: "Closed dep"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := runStatus(dir, closedDep, "closed"); err != nil {
 		t.Fatal(err)
 	}
-	openDep, err := runCreate(dir, createOptions{title: "Open dep"})
+	openDep, err := createLoose(dir, createOptions{title: "Open dep"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	id, err := runCreate(dir, createOptions{title: "Main"})
+	id, err := createLoose(dir, createOptions{title: "Main"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,11 +124,11 @@ func TestRunShow_BlockersSectionListsUnresolvedDepsInOrder(t *testing.T) {
 
 func TestRunShow_BlockingSectionListsOpenDependents(t *testing.T) {
 	dir := t.TempDir()
-	target, err := runCreate(dir, createOptions{title: "Target"})
+	target, err := createLoose(dir, createOptions{title: "Target"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	dependent, err := runCreate(dir, createOptions{title: "Dependent"})
+	dependent, err := createLoose(dir, createOptions{title: "Dependent"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,11 +142,11 @@ func TestRunShow_BlockingSectionListsOpenDependents(t *testing.T) {
 
 func TestRunShow_BlockingExcludesClosedDependents(t *testing.T) {
 	dir := t.TempDir()
-	target, err := runCreate(dir, createOptions{title: "Target"})
+	target, err := createLoose(dir, createOptions{title: "Target"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	dependent, err := runCreate(dir, createOptions{title: "Dependent"})
+	dependent, err := createLoose(dir, createOptions{title: "Dependent"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,11 +163,11 @@ func TestRunShow_BlockingExcludesClosedDependents(t *testing.T) {
 
 func TestRunShow_ChildrenSectionListsTicketsWithMatchingParent(t *testing.T) {
 	dir := t.TempDir()
-	parentID, err := runCreate(dir, createOptions{title: "Parent"})
+	parentID, err := createLoose(dir, createOptions{title: "Parent"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	childID, err := runCreate(dir, createOptions{title: "Child", parent: parentID})
+	childID, err := createLoose(dir, createOptions{title: "Child", parent: parentID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -180,11 +180,11 @@ func TestRunShow_ChildrenSectionListsTicketsWithMatchingParent(t *testing.T) {
 
 func TestRunShow_LinkedSectionListsLinksRegardlessOfStatus(t *testing.T) {
 	dir := t.TempDir()
-	id, err := runCreate(dir, createOptions{title: "Main"})
+	id, err := createLoose(dir, createOptions{title: "Main"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	other, err := runCreate(dir, createOptions{title: "Other"})
+	other, err := createLoose(dir, createOptions{title: "Other"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -201,7 +201,7 @@ func TestRunShow_LinkedSectionListsLinksRegardlessOfStatus(t *testing.T) {
 
 func TestRunShow_ResolvesPartialID(t *testing.T) {
 	dir := t.TempDir()
-	id, err := runCreate(dir, createOptions{title: "T"})
+	id, err := createLoose(dir, createOptions{title: "T"})
 	if err != nil {
 		t.Fatal(err)
 	}

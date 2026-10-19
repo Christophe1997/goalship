@@ -48,14 +48,9 @@ type createOptions struct {
 }
 
 // runCreate is cmd_create's Go core: resolve --parent, generate a new-shape
-// ID, and write the frontmatter + body bash tk's own create writes.
-func runCreate(ticketsDir string, opts createOptions) (string, error) {
-	return runCreateIn(ticketsDir, ticketsDir, opts)
-}
-
-// runCreateIn is runCreate for a ticketsDir inside the tickets area
-// areaDir, which the ID prefix is derived from.
-func runCreateIn(areaDir, ticketsDir string, opts createOptions) (string, error) {
+// ID, and write the frontmatter + body bash tk's own create writes into
+// ticketsDir. areaDir is the tickets area the ID prefix is derived from.
+func runCreate(areaDir, ticketsDir string, opts createOptions) (string, error) {
 	if err := os.MkdirAll(ticketsDir, 0o755); err != nil {
 		return "", fmt.Errorf("tk create: %w", err)
 	}
@@ -153,7 +148,7 @@ func NewCreateCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			id, err := runCreateIn(loc.area, loc.dir, opts)
+			id, err := runCreate(loc.area, loc.dir, opts)
 			if err != nil {
 				return err
 			}

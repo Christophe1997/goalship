@@ -11,7 +11,7 @@ import (
 
 func TestRunAddNote_AppendsNotesHeadingWhenMissing(t *testing.T) {
 	dir := t.TempDir()
-	id, err := runCreate(dir, createOptions{title: "T", ticketType: "task", priority: 2})
+	id, err := createLoose(dir, createOptions{title: "T", ticketType: "task", priority: 2})
 	if err != nil {
 		t.Fatalf("runCreate: %v", err)
 	}
@@ -31,7 +31,7 @@ func TestRunAddNote_AppendsNotesHeadingWhenMissing(t *testing.T) {
 
 func TestRunAddNote_SecondNoteDoesNotDuplicateHeading(t *testing.T) {
 	dir := t.TempDir()
-	id, err := runCreate(dir, createOptions{title: "T", ticketType: "task", priority: 2})
+	id, err := createLoose(dir, createOptions{title: "T", ticketType: "task", priority: 2})
 	if err != nil {
 		t.Fatalf("runCreate: %v", err)
 	}
@@ -57,7 +57,7 @@ func TestRunAddNote_SecondNoteDoesNotDuplicateHeading(t *testing.T) {
 
 func TestRunAddNote_ResolvesPartialID(t *testing.T) {
 	dir := t.TempDir()
-	id, err := runCreate(dir, createOptions{title: "T", ticketType: "task", priority: 2})
+	id, err := createLoose(dir, createOptions{title: "T", ticketType: "task", priority: 2})
 	if err != nil {
 		t.Fatalf("runCreate: %v", err)
 	}
@@ -131,7 +131,7 @@ func parseKeyValueNote(noteText string) map[string]string {
 
 func TestRunAddNote_ParsesAgainstReconciliationRegexes(t *testing.T) {
 	dir := t.TempDir()
-	id, err := runCreate(dir, createOptions{title: "T", ticketType: "task", priority: 2})
+	id, err := createLoose(dir, createOptions{title: "T", ticketType: "task", priority: 2})
 	if err != nil {
 		t.Fatalf("runCreate: %v", err)
 	}
@@ -182,7 +182,7 @@ func TestRunAddNote_ParsesAgainstReconciliationRegexes(t *testing.T) {
 func TestNewAddNoteCmd_TextArg(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("TICKETS_DIR", dir)
-	id, err := runCreate(dir, createOptions{title: "T", ticketType: "task", priority: 2})
+	id, err := createLoose(dir, createOptions{title: "T", ticketType: "task", priority: 2})
 	if err != nil {
 		t.Fatalf("runCreate: %v", err)
 	}
@@ -210,7 +210,7 @@ func TestNewAddNoteCmd_TextArg(t *testing.T) {
 func TestNewAddNoteCmd_StdinPipe(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("TICKETS_DIR", dir)
-	id, err := runCreate(dir, createOptions{title: "T", ticketType: "task", priority: 2})
+	id, err := createLoose(dir, createOptions{title: "T", ticketType: "task", priority: 2})
 	if err != nil {
 		t.Fatalf("runCreate: %v", err)
 	}
@@ -238,7 +238,7 @@ func TestNewAddNoteCmd_StdinPipe(t *testing.T) {
 func TestNewAddNoteCmd_NoTextNoPipeErrors(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("TICKETS_DIR", dir)
-	id, err := runCreate(dir, createOptions{title: "T", ticketType: "task", priority: 2})
+	id, err := createLoose(dir, createOptions{title: "T", ticketType: "task", priority: 2})
 	if err != nil {
 		t.Fatalf("runCreate: %v", err)
 	}

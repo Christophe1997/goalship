@@ -58,13 +58,9 @@ func assertNotExist(t *testing.T, path string) {
 	}
 }
 
-func ticketPathForTest(t *testing.T, dir, id string) string {
-	t.Helper()
-	path, err := ticket.Resolve(dir, id)
-	if err != nil {
-		t.Fatalf("ticket.Resolve(%q): %v", id, err)
-	}
-	return path
+// createLoose is runCreate for a folder that is its own tickets area.
+func createLoose(ticketsDir string, opts createOptions) (string, error) {
+	return runCreate(ticketsDir, ticketsDir, opts)
 }
 
 func loadForTest(t *testing.T, path string) *ticket.Ticket {
