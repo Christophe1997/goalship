@@ -120,6 +120,11 @@ type RunState struct {
 	ReviewUpdatedAt   string
 	ApprovedTicketIDs []string
 
+	// TicketsDir is the run's ticket folder, repo-relative (".tickets/<id>"),
+	// set once when `loop ledger` creates the run. Null marks a legacy run
+	// (or one started under TICKETS_DIR) that uses the tickets area itself.
+	TicketsDir *string
+
 	// Extra holds every JSON key neither Python's schema nor the R7
 	// additions above declare, in original order, values unparsed — so a
 	// hand-edited or forward-compatible ledger round-trips unrecognized
@@ -145,6 +150,7 @@ type knownRunStateFields struct {
 	ReviewNotes       string   `json:"review_notes"`
 	ReviewUpdatedAt   string   `json:"review_updated_at"`
 	ApprovedTicketIDs []string `json:"approved_ticket_ids"`
+	TicketsDir        *string  `json:"tickets_dir"`
 }
 
 var knownRunStateKeys = map[string]bool{
@@ -152,7 +158,7 @@ var knownRunStateKeys = map[string]bool{
 	"claimed_ticket_ids": true, "goal": true, "ticket_mode": true,
 	"terminal_state": true, "trunk_branch": true,
 	"review_state": true, "review_notes": true, "review_updated_at": true,
-	"approved_ticket_ids": true,
+	"approved_ticket_ids": true, "tickets_dir": true,
 }
 
 // nonNilStrings substitutes a non-nil empty slice for nil: encoding/json
@@ -230,6 +236,7 @@ func (s *RunState) Bytes() ([]byte, error) {
 		ReviewNotes:         s.ReviewNotes,
 		ReviewUpdatedAt:     s.ReviewUpdatedAt,
 		ApprovedTicketIDs:   nonNilStrings(s.ApprovedTicketIDs),
+		TicketsDir:          s.TicketsDir,
 	}
 	knownJSON, err := encodeIndented(known)
 	if err != nil {
@@ -329,6 +336,7 @@ func ParseRunState(data []byte) (*RunState, error) {
 		"review_notes":         &s.ReviewNotes,
 		"review_updated_at":    &s.ReviewUpdatedAt,
 		"approved_ticket_ids":  &s.ApprovedTicketIDs,
+		"tickets_dir":          &s.TicketsDir,
 	} {
 		raw, ok := values[key]
 		if !ok {

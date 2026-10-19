@@ -1,11 +1,16 @@
 package loop
 
 import (
+	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/Christophe1997/goalship/internal/ledger"
+	"github.com/Christophe1997/goalship/internal/ticket"
 )
 
 func NewLedgerCmd() *cobra.Command {
@@ -44,9 +49,16 @@ func NewLedgerCmd() *cobra.Command {
 				}
 				effectiveRunID = id
 			}
+			_, statErr := os.Stat(ledger.ResolveLedgerPath(repoRoot, effectiveRunID))
+			isNewRun := errors.Is(statErr, os.ErrNotExist)
 			state, err := ledger.LoadRunState(repoRoot, effectiveRunID)
 			if err != nil {
 				return err
+			}
+			if isNewRun && os.Getenv(ticket.TicketsDirEnv) == "" {
+				if err := assignRunFolder(repoRoot, state); err != nil {
+					return err
+				}
 			}
 
 			// Mutation order mirrors loop_runner.py's cmd_ledger exactly:
@@ -81,6 +93,9 @@ func NewLedgerCmd() *cobra.Command {
 			if err := state.Save(repoRoot); err != nil {
 				return err
 			}
+			if err := writeRunSummary(repoRoot, state); err != nil {
+				return err
+			}
 
 			data, err := state.BytesWithCapsExceeded()
 			if err != nil {
@@ -101,4 +116,40 @@ func NewLedgerCmd() *cobra.Command {
 	cmd.Flags().StringVar(&terminal, "terminal", "", "Mark the run terminal with this reason")
 
 	return cmd
+}
+
+// assignRunFolder records a brand-new run's ticket folder in its ledger
+// (KTD3). Only `loop ledger`'s own run creation sets it, so a run's folder
+// can never be repointed after tickets land in it.
+func assignRunFolder(repoRoot string, state *ledger.RunState) error {
+	runDir, err := ticket.RunDir(ticket.ResolveTicketsDir(repoRoot), state.RunID)
+	if err != nil {
+		return fmt.Errorf("loop ledger: %w", err)
+	}
+	rel, err := filepath.Rel(repoRoot, runDir)
+	if err != nil {
+		return fmt.Errorf("loop ledger: %w", err)
+	}
+	rel = filepath.ToSlash(rel)
+	state.TicketsDir = &rel
+	return nil
+}
+
+// writeRunSummary mirrors the ledger's goal and outcome into the run
+// folder's run.json, creating the folder on first write. Goalship never
+// stages or commits it (R12); the orchestrating skill decides that.
+func writeRunSummary(repoRoot string, state *ledger.RunState) error {
+	if state.TicketsDir == nil {
+		return nil
+	}
+	runDir := filepath.Join(repoRoot, filepath.FromSlash(*state.TicketsDir))
+	if err := os.MkdirAll(runDir, 0o755); err != nil {
+		return fmt.Errorf("loop ledger: create %s: %w", runDir, err)
+	}
+	return ticket.WriteRunSummary(runDir, ticket.RunSummary{
+		RunID:     state.RunID,
+		Goal:      state.Goal,
+		StartedAt: time.Now().UTC().Format(time.RFC3339),
+		Outcome:   state.TerminalState,
+	})
 }
