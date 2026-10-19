@@ -27,8 +27,8 @@ import (
 const acceptanceCriteriaSection = "Acceptance Criteria"
 
 // apiState is the shared, per-invocation data every API route handler
-// closes over. Run resolves ticketsDir exactly once when it builds the
-// handler; no handler may re-resolve it from os.Getwd() — a test that
+// closes over. ticketsDir comes from Options.TicketsDir, fixed once when Run
+// builds the handler; no handler may re-resolve it from os.Getwd() — a test that
 // accidentally did would PATCH this actual repository's live .tickets/*.md
 // files instead of a fixture directory.
 type apiState struct {

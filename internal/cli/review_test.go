@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -9,6 +10,8 @@ import (
 	"testing"
 
 	"github.com/Christophe1997/goalship/internal/ledger"
+	"github.com/Christophe1997/goalship/internal/reviewserver"
+	"github.com/Christophe1997/goalship/internal/ticket"
 )
 
 // chdir changes the process cwd for the duration of a test and restores it
@@ -188,6 +191,55 @@ func TestReviewCmd_NoGitRepo_RefusesWithClearError(t *testing.T) {
 	_, err := execReview(t, []string{"whatever"})
 	if err == nil {
 		t.Fatal("execute: want an error when no git repository is found, got nil")
+	}
+}
+
+// captureReviewOptions swaps the review server for a stub that records the
+// Options `goalship review` would start it with.
+func captureReviewOptions(t *testing.T) *reviewserver.Options {
+	t.Helper()
+	got := &reviewserver.Options{}
+	orig := runReviewServer
+	runReviewServer = func(_ context.Context, opts reviewserver.Options) error {
+		*got = opts
+		return nil
+	}
+	t.Cleanup(func() { runReviewServer = orig })
+	return got
+}
+
+func TestReviewCmd_PassesRunFolder(t *testing.T) {
+	t.Setenv(ticket.TicketsDirEnv, "")
+	repoRoot := newReviewTestRepo(t)
+	rel := ".tickets/run-new"
+	state := &ledger.RunState{RunID: "run-new", ReviewState: ledger.ReviewStatePending, TicketsDir: &rel}
+	if err := state.Save(repoRoot); err != nil {
+		t.Fatalf("save fixture ledger: %v", err)
+	}
+	got := captureReviewOptions(t)
+
+	if _, err := execReview(t, []string{"run-new"}); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if want := filepath.Join(got.RepoRoot, ".tickets", "run-new"); got.TicketsDir != want {
+		t.Errorf("Options.TicketsDir = %q, want %q", got.TicketsDir, want)
+	}
+}
+
+func TestReviewCmd_LegacyRun_PassesTicketsArea(t *testing.T) {
+	t.Setenv(ticket.TicketsDirEnv, "")
+	repoRoot := newReviewTestRepo(t)
+	state := &ledger.RunState{RunID: "run-legacy", ReviewState: ledger.ReviewStatePending}
+	if err := state.Save(repoRoot); err != nil {
+		t.Fatalf("save fixture ledger: %v", err)
+	}
+	got := captureReviewOptions(t)
+
+	if _, err := execReview(t, []string{"run-legacy"}); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if want := ticket.ResolveTicketsDir(got.RepoRoot); got.TicketsDir != want {
+		t.Errorf("Options.TicketsDir = %q, want %q", got.TicketsDir, want)
 	}
 }
 

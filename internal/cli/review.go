@@ -13,7 +13,12 @@ import (
 
 	"github.com/Christophe1997/goalship/internal/ledger"
 	"github.com/Christophe1997/goalship/internal/reviewserver"
+	"github.com/Christophe1997/goalship/internal/runfolder"
 )
+
+// runReviewServer is a seam so tests can check what `goalship review`
+// starts the server with, without binding a port and blocking.
+var runReviewServer = reviewserver.Run
 
 // NewReviewCmd starts the browser-based ticket-graph review checkpoint for
 // a run. Unlike tk/loop, it has no subcommands of its own — <run-id> is a
@@ -42,12 +47,18 @@ func NewReviewCmd() *cobra.Command {
 				return fmt.Errorf("review: run %q is already approved, nothing to review", runID)
 			}
 
+			ticketsDir, err := runfolder.Resolve(repoRoot, runID, false)
+			if err != nil {
+				return fmt.Errorf("review: %w", err)
+			}
+
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
-			return reviewserver.Run(ctx, reviewserver.Options{
-				RepoRoot: repoRoot,
-				RunID:    runID,
-				Stdout:   cmd.OutOrStdout(),
+			return runReviewServer(ctx, reviewserver.Options{
+				RepoRoot:   repoRoot,
+				RunID:      runID,
+				TicketsDir: ticketsDir,
+				Stdout:     cmd.OutOrStdout(),
 			})
 		},
 	}
