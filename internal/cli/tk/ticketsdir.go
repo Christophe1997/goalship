@@ -132,14 +132,70 @@ func resolveOrBashErr(ticketsDir, id string) (string, error) {
 	if err == nil {
 		return path, nil
 	}
+	return "", bashResolveErr(id, err)
+}
+
+// resolveInFolder is resolveOrBashErr for an ID a dependency, link or
+// parent will point at, which must live in loc.dir itself (R11): a miss
+// that names a ticket in another folder of the area is refused rather
+// than reported as not found.
+func resolveInFolder(loc ticketsLocation, id string) (string, error) {
+	path, err := ticket.Resolve(loc.dir, id)
+	if err == nil {
+		return path, nil
+	}
+	if errors.Is(err, ticket.ErrNotFound) {
+		if refusal := crossFolderRefusal(loc, id); refusal != nil {
+			return "", refusal
+		}
+	}
+	return "", bashResolveErr(id, err)
+}
+
+// crossFolderRefusal returns the refusal for id when it resolves in a
+// tickets folder of loc.area other than loc.dir, else nil.
+func crossFolderRefusal(loc ticketsLocation, id string) error {
+	runDirs, err := ticket.ListRunDirs(loc.area)
+	if err != nil {
+		return err
+	}
+	for _, dir := range append([]string{loc.area}, runDirs...) {
+		if filepath.Clean(dir) == filepath.Clean(loc.dir) {
+			continue
+		}
+		if _, err := ticket.Resolve(dir, id); err != nil {
+			continue
+		}
+		where := "the loose tickets"
+		if dir != loc.area {
+			runID, _ := runLabel(dir)
+			where = "run " + runID
+		}
+		return fmt.Errorf("Error: ticket '%s' is in %s; dependencies, links and parents must stay within one run",
+			strings.TrimSpace(id), where)
+	}
+	return nil
+}
+
+// runLabel returns a run folder's run ID and goal from its run.json,
+// falling back to the folder name when run.json is unreadable.
+func runLabel(runDir string) (runID, goal string) {
+	s, err := ticket.ReadRunSummary(runDir)
+	if err != nil || s.RunID == "" {
+		return filepath.Base(runDir), ""
+	}
+	return s.RunID, s.Goal
+}
+
+func bashResolveErr(id string, err error) error {
 	trimmed := strings.TrimSpace(id)
 	switch {
 	case errors.Is(err, ticket.ErrAmbiguous):
-		return "", fmt.Errorf("Error: ambiguous ID '%s' matches multiple tickets", trimmed)
+		return fmt.Errorf("Error: ambiguous ID '%s' matches multiple tickets", trimmed)
 	case errors.Is(err, ticket.ErrNotFound):
-		return "", fmt.Errorf("Error: ticket '%s' not found", trimmed)
+		return fmt.Errorf("Error: ticket '%s' not found", trimmed)
 	default:
-		return "", err
+		return err
 	}
 }
 

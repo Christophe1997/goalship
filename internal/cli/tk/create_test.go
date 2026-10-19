@@ -79,6 +79,44 @@ func TestNewCreateCmd_UnknownRunIDCreatesNothing(t *testing.T) {
 	}
 }
 
+func assertCreateParentRefused(t *testing.T, dir string, args []string, where string) {
+	t.Helper()
+	orig := gitUserName
+	defer func() { gitUserName = orig }()
+	gitUserName = func() string { return "" }
+	before, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = execCmd(t, NewCreateCmd(), args)
+	if err == nil || !strings.Contains(err.Error(), where) {
+		t.Fatalf("%v: err = %v, want a refusal naming %q", args, err, where)
+	}
+	after, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(after) != len(before) {
+		t.Errorf("%s = %v after refusal, want unchanged %v", dir, after, before)
+	}
+}
+
+func TestNewCreateCmd_AE6_RefusesParentInAnotherRun(t *testing.T) {
+	f := newCrossRunFixture(t)
+	assertCreateParentRefused(t, f.runB, []string{"--run-id", "B", "--parent", f.a1, "child"}, "run A")
+}
+
+func TestNewCreateCmd_AE6_RefusesLooseParentFromRun(t *testing.T) {
+	f := newCrossRunFixture(t)
+	assertCreateParentRefused(t, f.runB, []string{"--run-id", "B", "--parent", f.l1, "child"}, "loose tickets")
+}
+
+func TestNewCreateCmd_RefusesRunParentFromLoose(t *testing.T) {
+	f := newCrossRunFixture(t)
+	assertCreateParentRefused(t, f.area, []string{"--parent", f.b1, "child"}, "run B")
+}
+
 func TestRunCreate_PopulatesAllRequiredFrontmatterFields(t *testing.T) {
 	dir := t.TempDir()
 

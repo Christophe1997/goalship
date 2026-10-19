@@ -1,6 +1,7 @@
 package tk
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -62,6 +63,11 @@ func runCreateIn(areaDir, ticketsDir string, opts createOptions) (string, error)
 	resolvedParent := ""
 	if opts.parent != "" {
 		parentPath, err := ticket.Resolve(ticketsDir, opts.parent)
+		if errors.Is(err, ticket.ErrNotFound) {
+			if refusal := crossFolderRefusal(ticketsLocation{area: areaDir, dir: ticketsDir}, opts.parent); refusal != nil {
+				return "", refusal
+			}
+		}
 		if err != nil {
 			return "", fmt.Errorf("tk create: --parent: %w", err)
 		}

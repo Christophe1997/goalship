@@ -25,7 +25,7 @@ func NewLinkCmd() *cobra.Command {
 }
 
 func runLink(cmd *cobra.Command, rawIDs []string) error {
-	ticketsDir, err := findSelectedTicketsDir(cmd)
+	loc, err := selectTickets(cmd, false)
 	if err != nil {
 		return err
 	}
@@ -33,7 +33,7 @@ func runLink(cmd *cobra.Command, rawIDs []string) error {
 	paths := make([]string, len(rawIDs))
 	ids := make([]string, len(rawIDs))
 	for i, raw := range rawIDs {
-		path, err := resolveOrBashErr(ticketsDir, raw)
+		path, err := resolveInFolder(loc, raw)
 		if err != nil {
 			return err
 		}

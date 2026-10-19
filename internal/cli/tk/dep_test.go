@@ -5,12 +5,103 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
 
 	"github.com/Christophe1997/goalship/internal/ticket"
+	"github.com/Christophe1997/goalship/internal/ticket/tickettest"
 )
+
+// crossRunFixture is a repo with runs A and B holding a1 and b1, plus a
+// loose ticket l1.
+type crossRunFixture struct {
+	repo, runA, runB, area string
+	a1, b1, l1             string
+}
+
+func newCrossRunFixture(t *testing.T) crossRunFixture {
+	t.Helper()
+	repo := newRunRepo(t)
+	f := crossRunFixture{
+		repo: repo,
+		runA: startRun(t, repo, "A"),
+		runB: startRun(t, repo, "B"),
+		area: filepath.Join(repo, ".tickets"),
+	}
+	f.a1 = tickettest.CreateInRun(t, repo, "A", "a1")
+	f.b1 = tickettest.CreateInRun(t, repo, "B", "b1")
+	f.l1 = tickettest.Create(t, repo, "l1")
+	return f
+}
+
+// assertRefusedUnchanged runs cmd, expects a refusal naming where, and
+// checks every file in paths is byte-identical afterwards.
+func assertRefusedUnchanged(t *testing.T, cmd *cobra.Command, args []string, where string, paths ...string) {
+	t.Helper()
+	before := make([][]byte, len(paths))
+	for i, p := range paths {
+		data, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		before[i] = data
+	}
+
+	_, err := execCmd(t, cmd, args)
+	if err == nil || !strings.Contains(err.Error(), where) {
+		t.Fatalf("%v: err = %v, want a refusal naming %q", args, err, where)
+	}
+
+	for i, p := range paths {
+		after, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(before[i], after) {
+			t.Errorf("%s changed on refusal:\nbefore %q\nafter  %q", p, before[i], after)
+		}
+	}
+}
+
+func TestDep_AE6_RefusesTargetInAnotherRun(t *testing.T) {
+	f := newCrossRunFixture(t)
+	assertRefusedUnchanged(t, NewDepCmd(), []string{"--run-id", "B", f.b1, f.a1}, "run A",
+		filepath.Join(f.runB, f.b1+".md"))
+}
+
+func TestDep_AE6_RefusesLooseTargetFromRun(t *testing.T) {
+	f := newCrossRunFixture(t)
+	assertRefusedUnchanged(t, NewDepCmd(), []string{"--run-id", "B", f.b1, f.l1}, "loose tickets",
+		filepath.Join(f.runB, f.b1+".md"))
+}
+
+func TestDep_RefusesRunTargetFromLoose(t *testing.T) {
+	f := newCrossRunFixture(t)
+	assertRefusedUnchanged(t, NewDepCmd(), []string{f.l1, f.b1}, "run B",
+		filepath.Join(f.area, f.l1+".md"))
+}
+
+func TestDep_TargetMissingEverywhereKeepsNotFound(t *testing.T) {
+	f := newCrossRunFixture(t)
+	_, err := execCmd(t, NewDepCmd(), []string{"--run-id", "B", f.b1, "nope"})
+	if err == nil || err.Error() != "Error: ticket 'nope' not found" {
+		t.Errorf("err = %v, want bash tk's not-found", err)
+	}
+}
+
+func TestDep_SameRunTargetStillAdds(t *testing.T) {
+	f := newCrossRunFixture(t)
+	b2 := tickettest.CreateInRun(t, f.repo, "B", "b2")
+	out, err := execCmd(t, NewDepCmd(), []string{"--run-id", "B", f.b1, b2})
+	if err != nil {
+		t.Fatalf("dep: %v", err)
+	}
+	if want := "Added dependency: " + f.b1 + " -> " + b2 + "\n"; out != want {
+		t.Errorf("output = %q, want %q", out, want)
+	}
+}
 
 func writeTestTicket(t *testing.T, dir, id string, deps, links []string) string {
 	t.Helper()

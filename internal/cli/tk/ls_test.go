@@ -11,6 +11,41 @@ import (
 	"github.com/Christophe1997/goalship/internal/ticket/tickettest"
 )
 
+func TestNewLsCmd_AE3_AllGroupsTicketsByRun(t *testing.T) {
+	repo := newRunRepo(t)
+	loose := tickettest.Create(t, repo, "Loose")
+	var want strings.Builder
+	want.WriteString(loose + " [open] - Loose\n")
+	for _, run := range []struct{ id, goal, heading string }{
+		{"A", "Goal A", "== A: Goal A"},
+		{"B", "Goal B", "== B: Goal B"},
+		{"C", "", "== C"},
+	} {
+		dir := startRun(t, repo, run.id)
+		if err := ticket.WriteRunSummary(dir, ticket.RunSummary{RunID: run.id, Goal: run.goal}); err != nil {
+			t.Fatal(err)
+		}
+		id := tickettest.CreateInRun(t, repo, run.id, "In "+run.id)
+		want.WriteString(run.heading + "\n" + id + " [open] - In " + run.id + "\n")
+	}
+
+	out, err := execCmd(t, NewLsCmd(), []string{"--all"})
+	if err != nil {
+		t.Fatalf("ls --all: %v", err)
+	}
+	if out != want.String() {
+		t.Errorf("ls --all =\n%s\nwant\n%s", out, want.String())
+	}
+
+	out, err = execCmd(t, NewLsCmd(), nil)
+	if err != nil {
+		t.Fatalf("ls: %v", err)
+	}
+	if want := loose + " [open] - Loose\n"; out != want {
+		t.Errorf("ls = %q, want only the loose tickets %q", out, want)
+	}
+}
+
 func TestNewLsCmd_RunIDSeparatesRunFromLooseTickets(t *testing.T) {
 	repo := newRunRepo(t)
 	startRun(t, repo, "A")

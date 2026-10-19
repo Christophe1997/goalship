@@ -7,6 +7,24 @@ import (
 	"github.com/Christophe1997/goalship/internal/ticket"
 )
 
+func TestLink_AE6_RefusesTicketInAnotherRun(t *testing.T) {
+	f := newCrossRunFixture(t)
+	assertRefusedUnchanged(t, NewLinkCmd(), []string{"--run-id", "B", f.b1, f.a1}, "run A",
+		filepath.Join(f.runB, f.b1+".md"), filepath.Join(f.runA, f.a1+".md"))
+}
+
+func TestLink_AE6_RefusesLooseTicketFromRun(t *testing.T) {
+	f := newCrossRunFixture(t)
+	assertRefusedUnchanged(t, NewLinkCmd(), []string{"--run-id", "B", f.b1, f.l1}, "loose tickets",
+		filepath.Join(f.runB, f.b1+".md"), filepath.Join(f.area, f.l1+".md"))
+}
+
+func TestLink_RefusesRunTicketFromLoose(t *testing.T) {
+	f := newCrossRunFixture(t)
+	assertRefusedUnchanged(t, NewLinkCmd(), []string{f.l1, f.b1}, "run B",
+		filepath.Join(f.area, f.l1+".md"), filepath.Join(f.runB, f.b1+".md"))
+}
+
 func TestLink_SymmetricBetweenTwo(t *testing.T) {
 	dir := t.TempDir()
 	writeTestTicket(t, dir, "goa-a", nil, nil)
