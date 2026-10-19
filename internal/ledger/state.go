@@ -352,12 +352,20 @@ func ParseRunState(data []byte) (*RunState, error) {
 
 var unsafeRunIDChars = regexp.MustCompile(`[^A-Za-z0-9._-]`)
 
+// SafeRunID maps every character outside [A-Za-z0-9._-] to "_" — the
+// sanitizing run_state.py's resolve_ledger_path applies before using a run
+// ID as a file name. Shared with the run's ticket folder name so both stay
+// in step.
+func SafeRunID(runID string) string {
+	return unsafeRunIDChars.ReplaceAllString(runID, "_")
+}
+
 // ResolveLedgerPath mirrors run_state.py's resolve_ledger_path: one file
 // per run_id — never a shared file requiring read-modify-write locking to
 // avoid a lost-update race between concurrent invocations — at
 // <repoRoot>/.goalship/<safe-run-id>.json.
 func ResolveLedgerPath(repoRoot, runID string) string {
-	safe := unsafeRunIDChars.ReplaceAllString(runID, "_")
+	safe := SafeRunID(runID)
 	if safe == "" {
 		safe = "run"
 	}

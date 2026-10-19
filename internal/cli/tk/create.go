@@ -62,7 +62,7 @@ func runCreate(ticketsDir string, opts createOptions) (string, error) {
 		resolvedParent = strings.TrimSuffix(filepath.Base(parentPath), ".md")
 	}
 
-	id, err := ticket.GenerateID(ticketsDir)
+	id, err := ticket.GenerateID(ticketsDir, ticketsDir)
 	if err != nil {
 		return "", fmt.Errorf("tk create: %w", err)
 	}

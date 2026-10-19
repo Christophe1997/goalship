@@ -20,8 +20,10 @@ var ErrAmbiguous = errors.New("ticket: ambiguous id")
 // TicketsDirEnv is bash tk's TICKETS_DIR override variable name.
 const TicketsDirEnv = "TICKETS_DIR"
 
-// ResolveTicketsDir returns the tickets directory for repoRoot: the
-// TICKETS_DIR override when set, else repoRoot's ".tickets" subdirectory.
+// ResolveTicketsDir returns the tickets area for repoRoot: the TICKETS_DIR
+// override when set, else repoRoot's ".tickets" subdirectory. Run folders
+// (RunDir) live inside the area; commit, reset and dirty-tree exclusions
+// stay keyed to the whole area so no run's folder is staged or cleaned.
 // Unlike tk's own cwd-relative walk-up, this never searches parent
 // directories — callers here already have an explicit repoRoot instead of
 // relying on cwd.
@@ -104,15 +106,15 @@ func Resolve(ticketsDir, id string) (string, error) {
 const idSuffixAlphabet = "abcdefghijklmnopqrstuvwxyz0123456789"
 
 // GenerateID produces a new "<repo-prefix>-<YYYYMMDD-HHMM>-<4-char>" ID
-// (R4): a readable date-time segment — so a directory listing sorts in
-// creation order — plus tk's existing 4-char random-suffix convention,
-// retried on the rare collision with an existing file. repo-prefix
-// derivation matches bash tk's generate_id(): ticketsDir's parent
-// directory name stands in for tk's basename(pwd), which assumes
-// ticketsDir sits at the repo root — true the way tk (and this package's
-// callers) are normally invoked.
-func GenerateID(ticketsDir string) (string, error) {
-	prefix, err := repoPrefix(ticketsDir)
+// (R4) for a ticket in ticketsDir: a readable date-time segment — so a
+// directory listing sorts in creation order — plus tk's existing 4-char
+// random-suffix convention, retried on the rare collision with an existing
+// file. repo-prefix derivation matches bash tk's generate_id(): areaDir's
+// parent directory name stands in for tk's basename(pwd). areaDir is the
+// tickets area, not ticketsDir, because a run folder's own parent is the
+// area itself and would yield a hidden ".ti" prefix.
+func GenerateID(areaDir, ticketsDir string) (string, error) {
+	prefix, err := repoPrefix(areaDir)
 	if err != nil {
 		return "", err
 	}
