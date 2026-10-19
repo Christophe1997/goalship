@@ -9,7 +9,9 @@ import (
 )
 
 func NewResolveBaseCmd() *cobra.Command {
-	return &cobra.Command{
+	var runID string
+
+	cmd := &cobra.Command{
 		Use:   "resolve-base <repo-root> <ticket-id> <trunk-branch> [host-tool]",
 		Short: "Resolve the base ref a ticket's branch should build on",
 		Args:  cobra.RangeArgs(3, 4),
@@ -18,7 +20,11 @@ func NewResolveBaseCmd() *cobra.Command {
 			if len(args) > 3 {
 				hostTool = args[3]
 			}
-			base, err := gitops.ResolveBase(args[0], args[1], args[2], hostTool)
+			ticketsDir, err := runTicketsDir("resolve-base", args[0], runID)
+			if err != nil {
+				return err
+			}
+			base, err := gitops.ResolveBase(args[0], ticketsDir, args[1], args[2], hostTool)
 			if err != nil {
 				return err
 			}
@@ -26,4 +32,7 @@ func NewResolveBaseCmd() *cobra.Command {
 			return nil
 		},
 	}
+
+	cmd.Flags().StringVar(&runID, "run-id", "", runIDFlagUsage)
+	return cmd
 }

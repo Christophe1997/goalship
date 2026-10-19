@@ -69,7 +69,7 @@ func TestResolveBase_NoDependencies_ResolvesToTrunk(t *testing.T) {
 	repoRoot := newTestRepo(t)
 	ticketID := tkCreate(t, repoRoot, "Standalone ticket")
 
-	base, err := resolveBase(repoRoot, ticketID, "main", "", failIfCalledPRState(t))
+	base, err := resolveBase(repoRoot, ticketsDir(repoRoot), ticketID, "main", "", failIfCalledPRState(t))
 	if err != nil {
 		t.Fatalf("resolveBase: %v", err)
 	}
@@ -85,7 +85,7 @@ func TestResolveBase_UnknownTicketID_Errors(t *testing.T) {
 	repoRoot := newTestRepo(t)
 	tkCreate(t, repoRoot, "Some other ticket")
 
-	base, err := resolveBase(repoRoot, "no-such-ticket", "main", "", failIfCalledPRState(t))
+	base, err := resolveBase(repoRoot, ticketsDir(repoRoot), "no-such-ticket", "main", "", failIfCalledPRState(t))
 	if err == nil {
 		t.Fatalf("resolveBase: expected an error for an unknown ticket ID, got base %q", base)
 	}
@@ -99,7 +99,7 @@ func TestResolveBase_TicketIDWithJQSyntax_Errors(t *testing.T) {
 	repoRoot := newTestRepo(t)
 	tkCreate(t, repoRoot, "Only ticket")
 
-	base, err := resolveBase(repoRoot, `x" or true or .id=="`, "main", "", failIfCalledPRState(t))
+	base, err := resolveBase(repoRoot, ticketsDir(repoRoot), `x" or true or .id=="`, "main", "", failIfCalledPRState(t))
 	if err == nil {
 		t.Fatalf("resolveBase: expected an error for an ID carrying jq syntax, got base %q", base)
 	}
@@ -113,7 +113,7 @@ func TestResolveBase_SingleOpenDependency_ResolvesToItsBranch(t *testing.T) {
 	ticketID := tkCreate(t, repoRoot, "Dependent")
 	tkDep(t, repoRoot, ticketID, depID)
 
-	base, err := resolveBase(repoRoot, ticketID, "main", "gh", fakePRState("open"))
+	base, err := resolveBase(repoRoot, ticketsDir(repoRoot), ticketID, "main", "gh", fakePRState("open"))
 	if err != nil {
 		t.Fatalf("resolveBase: %v", err)
 	}
@@ -130,7 +130,7 @@ func TestResolveBase_MergedDependency_ResolvesToTrunk(t *testing.T) {
 	ticketID := tkCreate(t, repoRoot, "Dependent")
 	tkDep(t, repoRoot, ticketID, depID)
 
-	base, err := resolveBase(repoRoot, ticketID, "main", "gh", fakePRState("merged"))
+	base, err := resolveBase(repoRoot, ticketsDir(repoRoot), ticketID, "main", "gh", fakePRState("merged"))
 	if err != nil {
 		t.Fatalf("resolveBase: %v", err)
 	}
@@ -151,7 +151,7 @@ func TestResolveBase_DependencyNeverClaimedByThisTool_ResolvesToTrunk(t *testing
 	ticketID := tkCreate(t, repoRoot, "Dependent")
 	tkDep(t, repoRoot, ticketID, depID)
 
-	base, err := resolveBase(repoRoot, ticketID, "main", "gh", failIfCalledPRState(t))
+	base, err := resolveBase(repoRoot, ticketsDir(repoRoot), ticketID, "main", "gh", failIfCalledPRState(t))
 	if err != nil {
 		t.Fatalf("resolveBase: %v", err)
 	}
@@ -173,7 +173,7 @@ func TestResolveBase_DependencyPRLookupFailure_ReturnsError(t *testing.T) {
 	ticketID := tkCreate(t, repoRoot, "Dependent")
 	tkDep(t, repoRoot, ticketID, depID)
 
-	_, err := resolveBase(repoRoot, ticketID, "main", "gh", fakePRStateFails())
+	_, err := resolveBase(repoRoot, ticketsDir(repoRoot), ticketID, "main", "gh", fakePRStateFails())
 	if err == nil {
 		t.Fatal("resolveBase: expected error on PR-state lookup failure, got nil")
 	}
@@ -190,7 +190,7 @@ func TestResolveBase_DependencyWithNoPRNote_TreatedAsClosed(t *testing.T) {
 	ticketID := tkCreate(t, repoRoot, "Dependent")
 	tkDep(t, repoRoot, ticketID, depID)
 
-	base, err := resolveBase(repoRoot, ticketID, "main", "gh", failIfCalledPRState(t))
+	base, err := resolveBase(repoRoot, ticketsDir(repoRoot), ticketID, "main", "gh", failIfCalledPRState(t))
 	if err != nil {
 		t.Fatalf("resolveBase: %v", err)
 	}

@@ -25,8 +25,9 @@ type SweepCandidate struct {
 	Error    string // set only when Outcome == SweepOutcomeFailed
 }
 
-// SweepBranches finds every ticket branch that is still on origin, has a
-// merged PR, and isn't any currently open PR's base or head, and either
+// SweepBranches finds every ticket branch, across all of ticketsDirs, that
+// is still on origin, has a merged PR, and isn't any currently open PR's
+// base or head, and either
 // reports (execute == false) or deletes (execute == true) each one from
 // origin. The open-PR graph must validate before any ticket is evaluated: a
 // malformed/truncated graph makes the whole eligibility check unsafe, not
@@ -38,10 +39,19 @@ type SweepCandidate struct {
 // that candidate (Outcome "failed") and the batch continues. A hard error
 // after some branches were already deleted names them, since no candidate
 // list is returned alongside it.
-func SweepBranches(repoRoot, hostTool string, execute bool) ([]SweepCandidate, error) {
-	tickets, err := queryTickets(repoRoot, ".")
-	if err != nil {
-		return nil, err
+func SweepBranches(repoRoot string, ticketsDirs []string, hostTool string, execute bool) ([]SweepCandidate, error) {
+	type folderTicket struct{ dir, id string }
+	var tickets []folderTicket
+	for _, dir := range ticketsDirs {
+		rows, err := queryTickets(dir, ".")
+		if err != nil {
+			return nil, err
+		}
+		for _, row := range rows {
+			if id, _ := row["id"].(string); id != "" {
+				tickets = append(tickets, folderTicket{dir: dir, id: id})
+			}
+		}
 	}
 
 	prs, err := ListOpenPRs(repoRoot, hostTool)
@@ -57,11 +67,8 @@ func SweepBranches(repoRoot, hostTool string, execute bool) ([]SweepCandidate, e
 	candidates := make([]SweepCandidate, 0, len(tickets))
 	var deleted []string
 	for _, t := range tickets {
-		id, _ := t["id"].(string)
-		if id == "" {
-			continue
-		}
-		fields, err := noteFieldsForTicket(repoRoot, id)
+		id := t.id
+		fields, err := noteFieldsForTicket(t.dir, id)
 		if err != nil {
 			return nil, abortedSweepError(deleted, err)
 		}

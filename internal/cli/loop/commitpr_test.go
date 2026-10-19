@@ -62,6 +62,25 @@ func TestCommitCmd_NeverStagesTicketsDirChanges(t *testing.T) {
 	}
 }
 
+func TestCommitCmd_NeverStagesAnyRunFolderOrLooseTickets(t *testing.T) {
+	repoRoot := newLoopTestRepo(t)
+	newRun(t, repoRoot, "run-a")
+	newRun(t, repoRoot, "run-b")
+	tkCreateInRun(t, repoRoot, "run-a", "run A ticket")
+	tkCreateInRun(t, repoRoot, "run-b", "run B ticket")
+	tkCreate(t, repoRoot, "loose ticket")
+	if err := os.WriteFile(filepath.Join(repoRoot, "impl.go"), []byte("package main\n"), 0o644); err != nil {
+		t.Fatalf("write impl.go: %v", err)
+	}
+
+	execCmd(t, NewCommitCmd(), []string{repoRoot, "feat: add impl"})
+
+	files := runLoopGit(t, repoRoot, "show", "--name-only", "--format=", "HEAD")
+	if strings.TrimSpace(files) != "impl.go" {
+		t.Errorf("HEAD commit files = %q, want only impl.go", files)
+	}
+}
+
 func TestHeadSHACmd_PrintsRefSHA(t *testing.T) {
 	repoRoot := newLoopTestRepo(t)
 	want, err := gitops.HeadSHA(repoRoot, "")
@@ -155,11 +174,31 @@ esac`)
 	}
 }
 
-func TestShipCmd_WritesClosingNoteAndClosesTicket(t *testing.T) {
+func TestShipCmd_RunFolder_ClosesTicketThere(t *testing.T) {
 	repoRoot := newLoopTestRepo(t)
+	runDir := newRun(t, repoRoot, "run-a")
+	ticketID := tkCreateInRun(t, repoRoot, "run-a", "Ticket to ship")
+
+	execCmd(t, NewShipCmd(), []string{repoRoot, ticketID, "feat/x", "https://github.com/o/r/pull/3", "deadbeef", "--run-id", "run-a"})
+
+	data, err := os.ReadFile(filepath.Join(runDir, ticketID+".md"))
+	if err != nil {
+		t.Fatalf("read run-folder ticket: %v", err)
+	}
+	content := string(data)
+	if !strings.Contains(content, "status: closed") || !strings.Contains(content, "sha: deadbeef") {
+		t.Errorf("run-folder ticket not shipped:\n%s", content)
+	}
+}
+
+// TestShipCmd_LegacyRun_WritesLooseTicket covers AE4: a run whose ledger
+// predates run folders (null tickets_dir) keeps shipping loose tickets.
+func TestShipCmd_LegacyRun_WritesLooseTicket(t *testing.T) {
+	repoRoot := newLoopTestRepo(t)
+	newLegacyRun(t, repoRoot, "legacy")
 	ticketID := tkCreate(t, repoRoot, "Ticket to ship")
 
-	out := execCmd(t, NewShipCmd(), []string{repoRoot, ticketID, "feat/x", "https://github.com/o/r/pull/3", "deadbeef"})
+	out := execCmd(t, NewShipCmd(), []string{repoRoot, ticketID, "feat/x", "https://github.com/o/r/pull/3", "deadbeef", "--run-id", "legacy"})
 	if out != "" {
 		t.Errorf("output = %q, want empty", out)
 	}
@@ -186,8 +225,9 @@ func TestShipCmd_HonorsTicketsDirEnvOverride(t *testing.T) {
 	ticketsDir := t.TempDir()
 	t.Setenv("TICKETS_DIR", ticketsDir)
 	ticketID := tkCreate(t, repoRoot, "Ticket outside repoRoot/.tickets")
+	newLegacyRun(t, repoRoot, "r1")
 
-	execCmd(t, NewShipCmd(), []string{repoRoot, ticketID, "feat/x", "https://github.com/o/r/pull/3", "deadbeef"})
+	execCmd(t, NewShipCmd(), []string{repoRoot, ticketID, "feat/x", "https://github.com/o/r/pull/3", "deadbeef", "--run-id", "r1"})
 
 	data, err := os.ReadFile(filepath.Join(ticketsDir, ticketID+".md"))
 	if err != nil {
@@ -204,12 +244,17 @@ func TestShipCmd_UnknownTicketID_Errors(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(repoRoot, ".tickets"), 0o755); err != nil {
 		t.Fatalf("mkdir .tickets: %v", err)
 	}
+	newLegacyRun(t, repoRoot, "r1")
 
 	cmd := NewShipCmd()
 	cmd.SetOut(&strings.Builder{})
 	cmd.SetErr(&strings.Builder{})
-	cmd.SetArgs([]string{repoRoot, "no-such-ticket", "feat/x", "https://example.com/pull/1", "deadbeef"})
-	if err := cmd.Execute(); err == nil {
+	cmd.SetArgs([]string{repoRoot, "no-such-ticket", "feat/x", "https://example.com/pull/1", "deadbeef", "--run-id", "r1"})
+	err := cmd.Execute()
+	if err == nil {
 		t.Fatal("Execute: want an error for an unresolvable ticket id, got nil")
+	}
+	if !strings.Contains(err.Error(), "no-such-ticket") {
+		t.Errorf("error = %q, want it to name the unresolvable ticket", err)
 	}
 }

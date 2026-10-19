@@ -14,8 +14,8 @@ import (
 // without the closed status or vice versa from this tool's own writes.
 // Goes directly through internal/ticket rather than shelling out to `tk
 // add-note`/`tk close` the way the Python original does.
-func runShip(repoRoot, ticketID, branch, prURL, sha string) error {
-	_, err := ticket.Update(ticket.ResolveTicketsDir(repoRoot), ticketID, func(t *ticket.Ticket) {
+func runShip(ticketsDir, ticketID, branch, prURL, sha string) error {
+	_, err := ticket.Update(ticketsDir, ticketID, func(t *ticket.Ticket) {
 		t.AddNote(fmt.Sprintf("branch: %s\npr: %s\nsha: %s", branch, prURL, sha))
 		t.Status = "closed"
 	})
@@ -26,12 +26,21 @@ func runShip(repoRoot, ticketID, branch, prURL, sha string) error {
 }
 
 func NewShipCmd() *cobra.Command {
-	return &cobra.Command{
+	var runID string
+
+	cmd := &cobra.Command{
 		Use:   "ship <repo-root> <ticket-id> <branch> <pr-url> <sha>",
 		Short: "Record the closing note and close the ticket in one step",
 		Args:  cobra.ExactArgs(5),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runShip(args[0], args[1], args[2], args[3], args[4])
+			ticketsDir, err := runTicketsDir("ship", args[0], runID)
+			if err != nil {
+				return err
+			}
+			return runShip(ticketsDir, args[1], args[2], args[3], args[4])
 		},
 	}
+
+	cmd.Flags().StringVar(&runID, "run-id", "", runIDFlagUsage)
+	return cmd
 }

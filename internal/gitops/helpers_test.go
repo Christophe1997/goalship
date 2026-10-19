@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Christophe1997/goalship/internal/ticket"
 	"github.com/Christophe1997/goalship/internal/ticket/tickettest"
 )
 
@@ -77,6 +78,11 @@ func commitAll(t *testing.T, repoRoot, message string) string {
 
 func trimmed(s string) string {
 	return strings.TrimSpace(s)
+}
+
+// ticketsDir is the loose-ticket folder the tk* fixtures below write into.
+func ticketsDir(repoRoot string) string {
+	return ticket.ResolveTicketsDir(repoRoot)
 }
 
 // tkCreate and its siblings build ticket fixtures in-process; the names

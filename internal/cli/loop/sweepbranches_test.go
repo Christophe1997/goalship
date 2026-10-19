@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/Christophe1997/goalship/internal/gitops"
+	"github.com/Christophe1997/goalship/internal/ticket/tickettest"
 )
 
 // fakeGHSweep mirrors internal/gitops/sweepbranches_test.go's helper of the
@@ -98,6 +99,30 @@ func TestSweepBranchesCmd_ReportOnly_NamesOnlyTheEligibleBranch(t *testing.T) {
 	}
 	if len(got) != 1 || got[0].TicketID != eligible || got[0].Branch != "feat/eligible" {
 		t.Errorf("got = %+v, want exactly one candidate naming ticket %q / branch feat/eligible", got, eligible)
+	}
+}
+
+// TestSweepBranchesCmd_ConsidersBranchNamedOnlyInOldRunFolder: sweep reads
+// every run folder, not just the loose tickets, or an earlier run's merged
+// branches would never be cleaned up.
+func TestSweepBranchesCmd_ConsidersBranchNamedOnlyInOldRunFolder(t *testing.T) {
+	repoRoot := newLoopTestRepoWithBranches(t, "feat/old-run")
+	oldDir := newRun(t, repoRoot, "old-run")
+	ticketID := tkCreateInRun(t, repoRoot, "old-run", "shipped long ago")
+	tickettest.SetStatusIn(t, oldDir, ticketID, "closed")
+	tickettest.AddNoteIn(t, oldDir, ticketID, "branch: feat/old-run\npr: PR-OLD")
+	tkCreate(t, repoRoot, "unrelated loose ticket")
+
+	fakeGHSweep(t, "[]", map[string]string{"PR-OLD": "MERGED"})
+
+	out := execCmd(t, NewSweepBranchesCmd(), []string{repoRoot, "gh"})
+
+	var got []sweepCandidateJSON
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("unmarshal %q: %v", out, err)
+	}
+	if len(got) != 1 || got[0].TicketID != ticketID || got[0].Branch != "feat/old-run" {
+		t.Errorf("got = %+v, want exactly one candidate for ticket %q / feat/old-run", got, ticketID)
 	}
 }
 

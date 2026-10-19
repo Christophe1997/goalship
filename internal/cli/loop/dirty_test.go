@@ -76,6 +76,22 @@ func TestDirtyCmd_ExcludesGoalshipAndTicketsDirs(t *testing.T) {
 	}
 }
 
+func TestDirtyCmd_OnlyRunFolderChanges_ReportsClean(t *testing.T) {
+	repoRoot := newLoopTestRepo(t)
+	newRun(t, repoRoot, "run-a")
+	tkCreateInRun(t, repoRoot, "run-a", "run A ticket")
+
+	out := execCmd(t, NewDirtyCmd(), []string{repoRoot})
+
+	var got []string
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("unmarshal output %q: %v", out, err)
+	}
+	if len(got) != 0 {
+		t.Errorf("dirty paths = %v, want none for run-folder-only changes", got)
+	}
+}
+
 // TestDirtyCmd_ExcludesTicketsDirEnvOverride pins that once TICKETS_DIR
 // points at a different in-repo directory (#25's own deferred P0 finding),
 // dirtyPaths follows it there instead of staying hardcoded to ".tickets"

@@ -71,6 +71,37 @@ func TestReset_TicketsDirEnvOverride_NeverDeletesOtherInRepoDir(t *testing.T) {
 	}
 }
 
+// TestReset_KeepsEveryRunFolderAndLooseTickets: the clean exclusion covers
+// the whole tickets area, not just one run's folder, so aborting run A's
+// ticket never deletes run B's untracked folder or legacy loose tickets.
+func TestReset_KeepsEveryRunFolderAndLooseTickets(t *testing.T) {
+	repoRoot := newTestRepo(t)
+	createBranch(t, repoRoot, "feat/will-fail-4", "origin/main")
+	keep := []string{
+		filepath.Join(repoRoot, ".tickets", "run-a", "A-1.md"),
+		filepath.Join(repoRoot, ".tickets", "run-b", "B-1.md"),
+		filepath.Join(repoRoot, ".tickets", "L-1.md"),
+	}
+	for _, path := range keep {
+		mustMkdirAll(t, filepath.Dir(path))
+		writeFile(t, path, "# ticket\n")
+	}
+	writeFile(t, filepath.Join(repoRoot, "half-done.txt"), "broken\n")
+
+	if err := Reset(repoRoot, "main"); err != nil {
+		t.Fatalf("Reset: %v", err)
+	}
+
+	for _, path := range keep {
+		if _, err := os.Stat(path); err != nil {
+			t.Errorf("%s was swept by Reset: %v", path, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(repoRoot, "half-done.txt")); !os.IsNotExist(err) {
+		t.Errorf("half-done.txt still exists after Reset")
+	}
+}
+
 func TestReset_NeverDeletesTheBranchItself(t *testing.T) {
 	repoRoot := newTestRepo(t)
 	createBranch(t, repoRoot, "feat/kept-around", "origin/main")

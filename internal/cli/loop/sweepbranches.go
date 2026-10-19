@@ -4,6 +4,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Christophe1997/goalship/internal/gitops"
+	"github.com/Christophe1997/goalship/internal/runfolder"
 )
 
 // sweepCandidateJSON is one SweepCandidate's wire shape — snake_case keys.
@@ -37,7 +38,13 @@ func NewSweepBranchesCmd() *cobra.Command {
 		Short: "Report or delete merged goalship-managed branches no open PR still references",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			candidates, err := gitops.SweepBranches(args[0], args[1], execute)
+			// Every run folder, not one run's: sweep may only delete
+			// branches some ticket's notes name.
+			ticketsDirs, err := runfolder.All(args[0])
+			if err != nil {
+				return err
+			}
+			candidates, err := gitops.SweepBranches(args[0], ticketsDirs, args[1], execute)
 			if err != nil {
 				return err
 			}

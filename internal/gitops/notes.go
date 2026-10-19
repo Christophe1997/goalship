@@ -26,10 +26,10 @@ func jqString(s string) string {
 	return string(b)
 }
 
-// queryTickets runs jqFilter over every ticket in the repo's tickets
-// directory and decodes each match — mirrors reconciliation.py's tk_query.
-func queryTickets(repoRoot, jqFilter string) ([]map[string]any, error) {
-	lines, err := ticket.Query(ticket.ResolveTicketsDir(repoRoot), jqFilter)
+// queryTickets runs jqFilter over every ticket in ticketsDir and decodes
+// each match — mirrors reconciliation.py's tk_query.
+func queryTickets(ticketsDir, jqFilter string) ([]map[string]any, error) {
+	lines, err := ticket.Query(ticketsDir, jqFilter)
 	if err != nil {
 		return nil, err
 	}
@@ -85,8 +85,8 @@ var readTicketFile = os.ReadFile
 // the query that lists tickets tolerates a malformed one, and `tk show`
 // printed it regardless, so one hand-edited ticket must not abort a whole
 // reconcile or sweep.
-func readNotes(repoRoot, ticketID string) ([]string, error) {
-	path, err := ticket.Resolve(ticket.ResolveTicketsDir(repoRoot), ticketID)
+func readNotes(ticketsDir, ticketID string) ([]string, error) {
+	path, err := ticket.Resolve(ticketsDir, ticketID)
 	if err != nil {
 		return nil, err
 	}
@@ -137,8 +137,8 @@ func parseKeyValueNote(noteText string) map[string]string {
 // structured notes, oldest to newest, so a later note's fields extend or
 // override an earlier one's (a claim-time branch: note, then a ship-time
 // note that adds pr:/sha:).
-func noteFieldsForTicket(repoRoot, ticketID string) (map[string]string, error) {
-	notes, err := readNotes(repoRoot, ticketID)
+func noteFieldsForTicket(ticketsDir, ticketID string) (map[string]string, error) {
+	notes, err := readNotes(ticketsDir, ticketID)
 	if err != nil {
 		return nil, err
 	}

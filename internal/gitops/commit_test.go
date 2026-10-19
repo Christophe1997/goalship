@@ -129,6 +129,28 @@ func TestCommitAll_TicketsDirEnvOverride_ExcludesOtherInRepoDir(t *testing.T) {
 	}
 }
 
+// TestCommitAll_NeverStagesAnyRunFolderOrLooseTickets: the negative
+// pathspec covers the whole tickets area, so a ticket's commit never
+// carries its own run's folder, another run's, or legacy loose tickets.
+func TestCommitAll_NeverStagesAnyRunFolderOrLooseTickets(t *testing.T) {
+	repoRoot := newTestRepo(t)
+	for _, rel := range []string{"run-a/A-1.md", "run-b/B-1.md", "L-1.md"} {
+		path := filepath.Join(repoRoot, ".tickets", filepath.FromSlash(rel))
+		mustMkdirAll(t, filepath.Dir(path))
+		writeFile(t, path, "pending ticket edit\n")
+	}
+	writeFile(t, filepath.Join(repoRoot, "impl.go"), "package main\n")
+
+	if _, err := CommitAll(repoRoot, "feat: add impl"); err != nil {
+		t.Fatalf("CommitAll: %v", err)
+	}
+
+	files := runOK(t, repoRoot, "git", "show", "--name-only", "--format=", "HEAD")
+	if strings.TrimSpace(files) != "impl.go" {
+		t.Errorf("HEAD commit files = %q, want only impl.go", files)
+	}
+}
+
 func TestCommitAll_ExcludesLedgerDirViaGitInfoExclude(t *testing.T) {
 	repoRoot := newTestRepo(t)
 	writeFile(t, filepath.Join(repoRoot, "impl.go"), "package main\n")

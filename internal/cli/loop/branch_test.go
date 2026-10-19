@@ -80,19 +80,36 @@ func TestBranchNameCmd_TooFewArgs_Errors(t *testing.T) {
 
 func TestResolveBaseCmd_NoDependencies_PrintsTrunk(t *testing.T) {
 	repoRoot := newLoopTestRepo(t)
+	newLegacyRun(t, repoRoot, "r1")
 	ticketID := tkCreate(t, repoRoot, "Standalone ticket")
 
-	out := execCmd(t, NewResolveBaseCmd(), []string{repoRoot, ticketID, "main"})
+	out := execCmd(t, NewResolveBaseCmd(), []string{repoRoot, ticketID, "main", "--run-id", "r1"})
 	if strings.TrimSpace(out) != "main" {
 		t.Errorf("output = %q, want %q", out, "main\n")
 	}
 }
 
+func TestResolveBaseCmd_RunFolder_ReadsDependencyNotesThere(t *testing.T) {
+	withFakeHostTool(t, "gh", `echo OPEN`)
+	repoRoot := newLoopTestRepo(t)
+	runDir := newRun(t, repoRoot, "run-a")
+	dep := tkCreateInRun(t, repoRoot, "run-a", "Predecessor")
+	tickettest.AddNoteIn(t, runDir, dep, "branch: feat/dep\npr: PR1")
+	ticketID := tkCreateInRun(t, repoRoot, "run-a", "Stacked ticket")
+	tickettest.DepIn(t, runDir, ticketID, dep)
+
+	out := execCmd(t, NewResolveBaseCmd(), []string{repoRoot, ticketID, "main", "gh", "--run-id", "run-a"})
+	if strings.TrimSpace(out) != "feat/dep" {
+		t.Errorf("output = %q, want the open predecessor's branch %q", out, "feat/dep")
+	}
+}
+
 func TestResolveBaseCmd_AcceptsOptionalHostTool(t *testing.T) {
 	repoRoot := newLoopTestRepo(t)
+	newLegacyRun(t, repoRoot, "r1")
 	ticketID := tkCreate(t, repoRoot, "Standalone ticket with host tool arg")
 
-	out := execCmd(t, NewResolveBaseCmd(), []string{repoRoot, ticketID, "main", "gh"})
+	out := execCmd(t, NewResolveBaseCmd(), []string{repoRoot, ticketID, "main", "gh", "--run-id", "r1"})
 	if strings.TrimSpace(out) != "main" {
 		t.Errorf("output = %q, want %q", out, "main\n")
 	}
@@ -125,9 +142,22 @@ func TestCommitLandedCmd_PrintsYesOrNo(t *testing.T) {
 
 func TestRunBranchCmd_NoTicketIDs_PrintsNothing(t *testing.T) {
 	repoRoot := newLoopTestRepo(t)
-	out := execCmd(t, NewRunBranchCmd(), []string{repoRoot})
+	newLegacyRun(t, repoRoot, "r1")
+	out := execCmd(t, NewRunBranchCmd(), []string{repoRoot, "--run-id", "r1"})
 	if out != "" {
 		t.Errorf("output = %q, want empty", out)
+	}
+}
+
+func TestRunBranchCmd_RunFolder_ReadsBranchNoteThere(t *testing.T) {
+	repoRoot := newLoopTestRepo(t)
+	runDir := newRun(t, repoRoot, "run-a")
+	first := tkCreateInRun(t, repoRoot, "run-a", "First ticket")
+	tickettest.AddNoteIn(t, runDir, first, "branch: feat/shared")
+
+	out := execCmd(t, NewRunBranchCmd(), []string{repoRoot, first, "--run-id", "run-a"})
+	if strings.TrimSpace(out) != "feat/shared" {
+		t.Errorf("output = %q, want %q", out, "feat/shared")
 	}
 }
 
@@ -144,5 +174,26 @@ func TestResetCmd_ResetsWorkingTreeToBaseRef(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(repoRoot, "dirty.txt")); !os.IsNotExist(err) {
 		t.Errorf("dirty.txt still exists after reset")
+	}
+}
+
+func TestResetCmd_KeepsEveryRunFolderAndLooseTickets(t *testing.T) {
+	repoRoot := newLoopTestRepo(t)
+	runLoopGit(t, repoRoot, "checkout", "-b", "feat/x")
+	dirA := newRun(t, repoRoot, "run-a")
+	dirB := newRun(t, repoRoot, "run-b")
+	area := filepath.Join(repoRoot, ".tickets")
+	keep := []string{
+		filepath.Join(dirA, tkCreateInRun(t, repoRoot, "run-a", "run A ticket")+".md"),
+		filepath.Join(dirB, tkCreateInRun(t, repoRoot, "run-b", "run B ticket")+".md"),
+		filepath.Join(area, tkCreate(t, repoRoot, "loose ticket")+".md"),
+	}
+
+	execCmd(t, NewResetCmd(), []string{repoRoot, "main"})
+
+	for _, path := range keep {
+		if _, err := os.Stat(path); err != nil {
+			t.Errorf("%s was removed by reset: %v", path, err)
+		}
 	}
 }
