@@ -54,14 +54,23 @@ func ReadRunSummary(runDir string) (*RunSummary, error) {
 }
 
 // WriteRunSummary atomically writes runDir's run.json. started_at is set
-// once: an existing file's value wins over s.StartedAt.
+// once: an existing file's value wins over s.StartedAt. An unchanged summary
+// is not rewritten, so `loop ledger` calls that only touch the ledger leave
+// the tickets area alone.
 func WriteRunSummary(runDir string, s RunSummary) error {
-	existing, err := ReadRunSummary(runDir)
+	path := filepath.Join(runDir, RunSummaryFile)
+	existingData, err := os.ReadFile(path)
 	switch {
-	case err == nil && existing.StartedAt != "":
-		s.StartedAt = existing.StartedAt
-	case err != nil && !errors.Is(err, os.ErrNotExist):
-		return err
+	case err == nil:
+		var existing RunSummary
+		if err := json.Unmarshal(existingData, &existing); err != nil {
+			return fmt.Errorf("ticket: parse %s: %w", path, err)
+		}
+		if existing.StartedAt != "" {
+			s.StartedAt = existing.StartedAt
+		}
+	case !errors.Is(err, os.ErrNotExist):
+		return fmt.Errorf("ticket: read %s: %w", path, err)
 	}
 
 	var buf bytes.Buffer
@@ -71,7 +80,9 @@ func WriteRunSummary(runDir string, s RunSummary) error {
 	if err := enc.Encode(s); err != nil {
 		return fmt.Errorf("ticket: encode run summary: %w", err)
 	}
-	path := filepath.Join(runDir, RunSummaryFile)
+	if bytes.Equal(buf.Bytes(), existingData) {
+		return nil
+	}
 	if err := atomicfile.Write(path, buf.Bytes()); err != nil {
 		return fmt.Errorf("ticket: write %s: %w", path, err)
 	}

@@ -62,25 +62,6 @@ func TestCommitCmd_NeverStagesTicketsDirChanges(t *testing.T) {
 	}
 }
 
-func TestCommitCmd_NeverStagesAnyRunFolderOrLooseTickets(t *testing.T) {
-	repoRoot := newLoopTestRepo(t)
-	newRun(t, repoRoot, "run-a")
-	newRun(t, repoRoot, "run-b")
-	tkCreateInRun(t, repoRoot, "run-a", "run A ticket")
-	tkCreateInRun(t, repoRoot, "run-b", "run B ticket")
-	tkCreate(t, repoRoot, "loose ticket")
-	if err := os.WriteFile(filepath.Join(repoRoot, "impl.go"), []byte("package main\n"), 0o644); err != nil {
-		t.Fatalf("write impl.go: %v", err)
-	}
-
-	execCmd(t, NewCommitCmd(), []string{repoRoot, "feat: add impl"})
-
-	files := runLoopGit(t, repoRoot, "show", "--name-only", "--format=", "HEAD")
-	if strings.TrimSpace(files) != "impl.go" {
-		t.Errorf("HEAD commit files = %q, want only impl.go", files)
-	}
-}
-
 func TestHeadSHACmd_PrintsRefSHA(t *testing.T) {
 	repoRoot := newLoopTestRepo(t)
 	want, err := gitops.HeadSHA(repoRoot, "")

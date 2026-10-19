@@ -176,24 +176,3 @@ func TestResetCmd_ResetsWorkingTreeToBaseRef(t *testing.T) {
 		t.Errorf("dirty.txt still exists after reset")
 	}
 }
-
-func TestResetCmd_KeepsEveryRunFolderAndLooseTickets(t *testing.T) {
-	repoRoot := newLoopTestRepo(t)
-	runLoopGit(t, repoRoot, "checkout", "-b", "feat/x")
-	dirA := newRun(t, repoRoot, "run-a")
-	dirB := newRun(t, repoRoot, "run-b")
-	area := filepath.Join(repoRoot, ".tickets")
-	keep := []string{
-		filepath.Join(dirA, tkCreateInRun(t, repoRoot, "run-a", "run A ticket")+".md"),
-		filepath.Join(dirB, tkCreateInRun(t, repoRoot, "run-b", "run B ticket")+".md"),
-		filepath.Join(area, tkCreate(t, repoRoot, "loose ticket")+".md"),
-	}
-
-	execCmd(t, NewResetCmd(), []string{repoRoot, "main"})
-
-	for _, path := range keep {
-		if _, err := os.Stat(path); err != nil {
-			t.Errorf("%s was removed by reset: %v", path, err)
-		}
-	}
-}

@@ -27,9 +27,8 @@ type SweepCandidate struct {
 
 // SweepBranches finds every ticket branch, across all of ticketsDirs, that
 // is still on origin, has a merged PR, and isn't any currently open PR's
-// base or head, and either
-// reports (execute == false) or deletes (execute == true) each one from
-// origin. The open-PR graph must validate before any ticket is evaluated: a
+// base or head, and either reports (execute == false) or deletes
+// (execute == true) each one from origin. The open-PR graph must validate before any ticket is evaluated: a
 // malformed/truncated graph makes the whole eligibility check unsafe, not
 // just one candidate, so a ListOpenPRs/ValidateOpenPRGraph failure is a hard
 // error for the whole call, returned before any candidate is considered.
@@ -67,8 +66,7 @@ func SweepBranches(repoRoot string, ticketsDirs []string, hostTool string, execu
 	candidates := make([]SweepCandidate, 0, len(tickets))
 	var deleted []string
 	for _, t := range tickets {
-		id := t.id
-		fields, err := noteFieldsForTicket(t.dir, id)
+		fields, err := noteFieldsForTicket(t.dir, t.id)
 		if err != nil {
 			return nil, abortedSweepError(deleted, err)
 		}
@@ -91,7 +89,7 @@ func SweepBranches(repoRoot string, ticketsDirs []string, hostTool string, execu
 			continue
 		}
 
-		candidate := SweepCandidate{TicketID: id, Branch: branch, PRRef: prRef}
+		candidate := SweepCandidate{TicketID: t.id, Branch: branch, PRRef: prRef}
 		switch {
 		case !execute:
 			candidate.Outcome = SweepOutcomeWouldDelete

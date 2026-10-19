@@ -1,8 +1,7 @@
 // Package tickettest builds ticket fixtures in-process so tests never need
 // the bash tk binary to set up state. Every helper finds the tickets
 // directory the way production code does (ticket.ResolveTicketsDir), so a
-// test that sets TICKETS_DIR keeps exercising the override. The *In and
-// *InRun variants target a run folder instead of the loose tickets.
+// test that sets TICKETS_DIR keeps exercising the override.
 package tickettest
 
 import (

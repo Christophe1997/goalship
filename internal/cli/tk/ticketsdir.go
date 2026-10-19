@@ -85,7 +85,7 @@ type ticketsLocation struct {
 
 // selectTickets locates the tickets area the way findTicketsDir (or, for
 // a write command, findOrInitTicketsDir) does, then narrows it to the
-// --run-id run's folder. Without --run-id the result is exactly today's.
+// --run-id run's folder.
 func selectTickets(cmd *cobra.Command, write bool) (ticketsLocation, error) {
 	find := findTicketsDir
 	if write {
@@ -144,30 +144,33 @@ func resolveInFolder(loc ticketsLocation, id string) (string, error) {
 	if err == nil {
 		return path, nil
 	}
-	if errors.Is(err, ticket.ErrNotFound) {
-		if refusal := crossFolderRefusal(loc, id); refusal != nil {
-			return "", refusal
-		}
+	if refusal := crossFolderRefusal(loc, id, err); refusal != nil {
+		return "", refusal
 	}
 	return "", bashResolveErr(id, err)
 }
 
-// crossFolderRefusal returns the refusal for id when it resolves in a
-// tickets folder of loc.area other than loc.dir, else nil.
-func crossFolderRefusal(loc ticketsLocation, id string) error {
-	runDirs, err := ticket.ListRunDirs(loc.area)
+// crossFolderRefusal returns the refusal for id when resolveErr is a miss
+// in loc.dir and id resolves in another tickets folder of loc.area, else
+// nil.
+func crossFolderRefusal(loc ticketsLocation, id string, resolveErr error) error {
+	if !errors.Is(resolveErr, ticket.ErrNotFound) {
+		return nil
+	}
+	area := filepath.Clean(loc.area)
+	runDirs, err := ticket.ListRunDirs(area)
 	if err != nil {
 		return err
 	}
-	for _, dir := range append([]string{loc.area}, runDirs...) {
-		if filepath.Clean(dir) == filepath.Clean(loc.dir) {
+	for _, dir := range append([]string{area}, runDirs...) {
+		if dir == filepath.Clean(loc.dir) {
 			continue
 		}
 		if _, err := ticket.Resolve(dir, id); err != nil {
 			continue
 		}
 		where := "the loose tickets"
-		if dir != loc.area {
+		if dir != area {
 			runID, _ := runLabel(dir)
 			where = "run " + runID
 		}
