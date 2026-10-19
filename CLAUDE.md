@@ -33,6 +33,7 @@ Scope is deliberately narrow (see README "Scope"): don't add ticket-tool or loop
 - `internal/ledger` — the per-run JSON ledger at `.goalship/<run-id>.json` (state, caps, terminal states, review state), the OS-native advisory review lock (gofrs/flock), and adding `.goalship` to `.git/info/exclude` (never to the target repo's `.gitignore`).
 - `internal/gitops` — all git and `gh`/`glab` work, done by **shelling out, never a Go git library**, so behavior matches the Python original. Every failure surfaces as `*ExitError` (argv, exit code, stderr, `TimedOut`). Host-tool calls run under a watchdog timeout with `WaitDelay` so orphaned child processes can't hang the CLI. Host tool (gh vs glab) is chosen from the `origin` remote's host. Seams like `PRStateFunc` exist for injecting PR state in tests.
 - `internal/reviewserver` — loopback-only HTTP server for `goalship review`: per-invocation token + Host-header validation + CSP (`security.go`), embedded UI in `assets/` via `go:embed`, JSON API for ticket edit/approve/reject/withdraw (`api.go`), and live refresh via fsnotify → SSE with polling fallback (`watch.go`). It exits once the user decides.
+- `internal/runfolder` — picks the tickets folder a run's commands use (`Resolve`): a `TICKETS_DIR` override, else the ledger's `tickets_dir`, else the whole tickets area for legacy runs (null `tickets_dir`); `tk` alone also accepts a ledger-less folder holding `run.json`. `All` returns the area plus every run folder.
 - `internal/atomicfile` — temp-file + rename writes; all ledger writes go through it.
 
 Coordination between goalship and the orchestrating agent happens only by reading and atomically writing the ledger — there is no long-running process other than a single `review` invocation.
@@ -49,4 +50,4 @@ Paths that hold ticket state (`.tickets/` or a `TICKETS_DIR` override inside the
 
 - `.tickets/` and `.goalship/` in this repo are goalship's own ticket graph and run ledgers from building itself — real data, not fixtures.
 - `internal/clistub` is a leftover scaffolding helper with no remaining callers.
-- Known open gap: every run shares one `.tickets/` (issue #8).
+- Tickets area versus run folder: `ticket.ResolveTicketsDir`/`RelativeTicketsDir` mean the whole area (`.tickets/` or `TICKETS_DIR`) and drive the commit/reset/dirty exclusions, so no run's folder is ever staged or cleaned. Ticket reads and writes go to the run's own folder (`.tickets/<run-id>/`, recorded once in the ledger's `tickets_dir` by `loop ledger`) via `runfolder.Resolve`.
