@@ -13,7 +13,7 @@ func NewReadyCmd() *cobra.Command {
 		Use:   "ready",
 		Short: "List open/in-progress tickets whose dependencies are all closed",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ticketsDir, err := findTicketsDir()
+			ticketsDir, err := findSelectedTicketsDir(cmd)
 			if err != nil {
 				return err
 			}
@@ -70,5 +70,5 @@ func NewReadyCmd() *cobra.Command {
 	cmd.Flags().StringVarP(&assignee, "assignee", "a", "", "Filter by assignee")
 	cmd.Flags().StringVarP(&tag, "tag", "T", "", "Filter by tag")
 
-	return cmd
+	return withRunIDFlag(cmd)
 }

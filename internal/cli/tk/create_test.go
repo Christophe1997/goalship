@@ -5,10 +5,79 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/Christophe1997/goalship/internal/ticket"
 )
+
+func TestNewCreateCmd_RunIDWritesIntoRunFolder(t *testing.T) {
+	repo := newRunRepo(t)
+	runDir := startRun(t, repo, "A")
+	orig := gitUserName
+	defer func() { gitUserName = orig }()
+	gitUserName = func() string { return "" }
+
+	out, err := execCmd(t, NewCreateCmd(), []string{"--run-id", "A", "x"})
+	if err != nil {
+		t.Fatalf("create --run-id A: %v", err)
+	}
+	id := bytesTrimNewline([]byte(out))
+
+	idRe := regexp.MustCompile(`^[A-Za-z0-9]+-\d{8}-\d{4}-[a-z0-9]{4}$`)
+	if !idRe.MatchString(id) {
+		t.Fatalf("id = %q, want a new-shape ID with a non-hidden prefix", id)
+	}
+	area := filepath.Join(repo, ".tickets")
+	looseID, err := ticket.GenerateID(area, area)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := strings.SplitN(id, "-", 2)[0], strings.SplitN(looseID, "-", 2)[0]; got != want {
+		t.Errorf("prefix = %q, want the loose-ticket prefix %q", got, want)
+	}
+
+	got, err := os.ReadFile(filepath.Join(runDir, id+".md"))
+	if err != nil {
+		t.Fatalf("ticket not in run folder: %v", err)
+	}
+	wantPrefix := "---\nid: " + id + "\nstatus: open\ndeps: []\nlinks: []\ncreated: "
+	wantSuffix := "type: task\npriority: 2\n---\n# x\n\n"
+	if !bytes.HasPrefix(got, []byte(wantPrefix)) || !bytes.HasSuffix(got, []byte(wantSuffix)) {
+		t.Errorf("file = %q, want today's format (prefix %q, suffix %q)", got, wantPrefix, wantSuffix)
+	}
+	assertNotExist(t, filepath.Join(area, id+".md"))
+}
+
+func TestNewCreateCmd_RunIDCreatesFolderTheLedgerNames(t *testing.T) {
+	repo := newRunRepo(t)
+	saveRunLedger(t, repo, "A")
+
+	out, err := execCmd(t, NewCreateCmd(), []string{"--run-id", "A", "x"})
+	if err != nil {
+		t.Fatalf("create --run-id A: %v", err)
+	}
+	id := bytesTrimNewline([]byte(out))
+	if _, err := os.Stat(filepath.Join(repo, ".tickets", "A", id+".md")); err != nil {
+		t.Errorf("ticket not created in the ledger's folder: %v", err)
+	}
+}
+
+func TestNewCreateCmd_UnknownRunIDCreatesNothing(t *testing.T) {
+	repo := newRunRepo(t)
+
+	if _, err := execCmd(t, NewCreateCmd(), []string{"--run-id", "B", "x"}); err == nil || !strings.Contains(err.Error(), "unknown run") {
+		t.Fatalf("create --run-id B: err = %v, want an unknown-run refusal", err)
+	}
+	assertNotExist(t, filepath.Join(repo, ".goalship"))
+	entries, err := os.ReadDir(filepath.Join(repo, ".tickets"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Errorf(".tickets = %v, want empty", entries)
+	}
+}
 
 func TestRunCreate_PopulatesAllRequiredFrontmatterFields(t *testing.T) {
 	dir := t.TempDir()

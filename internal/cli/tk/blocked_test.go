@@ -5,6 +5,18 @@ import (
 	"testing"
 )
 
+func TestNewBlockedCmd_RunIDEvaluatesWithinRun(t *testing.T) {
+	blocker, blocked := newBlockedRun(t)
+
+	out, err := execCmd(t, NewBlockedCmd(), []string{"--run-id", "A"})
+	if err != nil {
+		t.Fatalf("blocked --run-id A: %v", err)
+	}
+	if want := blocked + " [P2][open] - Blocked <- [" + blocker + "]\n"; out != want {
+		t.Errorf("blocked --run-id A = %q, want %q", out, want)
+	}
+}
+
 func TestNewBlockedCmd_NoDepsNotBlocked(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("TICKETS_DIR", dir)

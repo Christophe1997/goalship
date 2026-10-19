@@ -2,8 +2,68 @@ package tk
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/Christophe1997/goalship/internal/ticket"
+	"github.com/Christophe1997/goalship/internal/ticket/tickettest"
 )
+
+func TestNewLsCmd_RunIDSeparatesRunFromLooseTickets(t *testing.T) {
+	repo := newRunRepo(t)
+	startRun(t, repo, "A")
+	runTicket := tickettest.CreateInRun(t, repo, "A", "In run A")
+	looseTicket := tickettest.Create(t, repo, "Loose")
+
+	out, err := execCmd(t, NewLsCmd(), []string{"--run-id", "A"})
+	if err != nil {
+		t.Fatalf("ls --run-id A: %v", err)
+	}
+	if want := runTicket + " [open] - In run A\n"; out != want {
+		t.Errorf("ls --run-id A = %q, want %q", out, want)
+	}
+
+	out, err = execCmd(t, NewLsCmd(), nil)
+	if err != nil {
+		t.Fatalf("ls: %v", err)
+	}
+	if want := looseTicket + " [open] - Loose\n"; out != want {
+		t.Errorf("ls = %q, want %q", out, want)
+	}
+}
+
+func TestNewLsCmd_RunIDLedgerlessRunFolder(t *testing.T) {
+	repo := newRunRepo(t)
+	dir := filepath.Join(repo, ".tickets", "B")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := ticket.WriteRunSummary(dir, ticket.RunSummary{RunID: "B"}); err != nil {
+		t.Fatal(err)
+	}
+	id := tickettest.CreateInRun(t, repo, "B", "Cloned")
+
+	out, err := execCmd(t, NewLsCmd(), []string{"--run-id", "B"})
+	if err != nil {
+		t.Fatalf("ls --run-id B: %v", err)
+	}
+	if want := id + " [open] - Cloned\n"; out != want {
+		t.Errorf("ls --run-id B = %q, want %q", out, want)
+	}
+	assertNotExist(t, filepath.Join(repo, ".goalship"))
+}
+
+func TestNewLsCmd_UnknownRunIDFailsAndCreatesNothing(t *testing.T) {
+	repo := newRunRepo(t)
+
+	if _, err := execCmd(t, NewLsCmd(), []string{"--run-id", "B"}); err == nil || !strings.Contains(err.Error(), "unknown run") {
+		t.Fatalf("ls --run-id B: err = %v, want an unknown-run refusal", err)
+	}
+	assertNotExist(t, filepath.Join(repo, ".tickets", "B"))
+	assertNotExist(t, filepath.Join(repo, ".goalship"))
+}
 
 func TestNewLsCmd_ListsAllByDefaultInFilenameOrder(t *testing.T) {
 	dir := t.TempDir()

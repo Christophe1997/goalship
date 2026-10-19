@@ -16,13 +16,13 @@ import (
 const beadsIssuesPath = ".beads/issues.jsonl"
 
 func NewMigrateBeadsCmd() *cobra.Command {
-	return &cobra.Command{
+	return withRunIDFlag(&cobra.Command{
 		Use:   "migrate-beads",
 		Short: "Import tickets from .beads/issues.jsonl",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runMigrateBeads(cmd)
 		},
-	}
+	})
 }
 
 func runMigrateBeads(cmd *cobra.Command) error {
@@ -36,10 +36,11 @@ func runMigrateBeads(cmd *cobra.Command) error {
 
 	// migrate-beads is a WRITE_COMMANDS command: it may initialize a
 	// fresh .tickets/ in the current directory if none is found.
-	ticketsDir, err := findOrInitTicketsDir()
+	loc, err := selectTickets(cmd, true)
 	if err != nil {
 		return err
 	}
+	ticketsDir := loc.dir
 	if err := os.MkdirAll(ticketsDir, 0o755); err != nil {
 		return err
 	}

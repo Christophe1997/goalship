@@ -167,16 +167,16 @@ func linkedLines(links []string, byID map[string]ticketInfo) []string {
 }
 
 func NewShowCmd() *cobra.Command {
-	return &cobra.Command{
+	return withRunIDFlag(&cobra.Command{
 		Use:   "show <ticket-id>",
 		Short: "Display a ticket, including derived relationship sections",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ticketsDir, err := findTicketsDir()
+			ticketsDir, err := findSelectedTicketsDir(cmd)
 			if err != nil {
 				return err
 			}
 			return runShow(ticketsDir, args[0], cmd.OutOrStdout())
 		},
-	}
+	})
 }

@@ -49,6 +49,12 @@ type createOptions struct {
 // runCreate is cmd_create's Go core: resolve --parent, generate a new-shape
 // ID, and write the frontmatter + body bash tk's own create writes.
 func runCreate(ticketsDir string, opts createOptions) (string, error) {
+	return runCreateIn(ticketsDir, ticketsDir, opts)
+}
+
+// runCreateIn is runCreate for a ticketsDir inside the tickets area
+// areaDir, which the ID prefix is derived from.
+func runCreateIn(areaDir, ticketsDir string, opts createOptions) (string, error) {
 	if err := os.MkdirAll(ticketsDir, 0o755); err != nil {
 		return "", fmt.Errorf("tk create: %w", err)
 	}
@@ -62,7 +68,7 @@ func runCreate(ticketsDir string, opts createOptions) (string, error) {
 		resolvedParent = strings.TrimSuffix(filepath.Base(parentPath), ".md")
 	}
 
-	id, err := ticket.GenerateID(ticketsDir, ticketsDir)
+	id, err := ticket.GenerateID(areaDir, ticketsDir)
 	if err != nil {
 		return "", fmt.Errorf("tk create: %w", err)
 	}
@@ -137,11 +143,11 @@ func NewCreateCmd() *cobra.Command {
 			}
 			opts.assignee = resolveAssignee(cmd.Flags().Changed("assignee"), opts.assignee)
 
-			ticketsDir, err := findOrInitTicketsDir()
+			loc, err := selectTickets(cmd, true)
 			if err != nil {
 				return err
 			}
-			id, err := runCreate(ticketsDir, opts)
+			id, err := runCreateIn(loc.area, loc.dir, opts)
 			if err != nil {
 				return err
 			}
@@ -160,5 +166,5 @@ func NewCreateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&opts.parent, "parent", "", "Parent ticket ID")
 	cmd.Flags().StringVar(&opts.tags, "tags", "", "Comma-separated tags (e.g. ui,backend,urgent)")
 
-	return cmd
+	return withRunIDFlag(cmd)
 }

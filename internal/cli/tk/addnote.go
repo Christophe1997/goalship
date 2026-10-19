@@ -22,7 +22,7 @@ func runAddNote(ticketsDir, id, note string) (string, error) {
 }
 
 func NewAddNoteCmd() *cobra.Command {
-	return &cobra.Command{
+	return withRunIDFlag(&cobra.Command{
 		Use:   "add-note <ticket-id> [text...]",
 		Short: "Append a timestamped note to a ticket (or pipe text via stdin)",
 		Args:  cobra.MinimumNArgs(1),
@@ -43,7 +43,7 @@ func NewAddNoteCmd() *cobra.Command {
 				return fmt.Errorf("tk add-note: no note provided")
 			}
 
-			ticketsDir, err := findTicketsDir()
+			ticketsDir, err := findSelectedTicketsDir(cmd)
 			if err != nil {
 				return err
 			}
@@ -54,5 +54,5 @@ func NewAddNoteCmd() *cobra.Command {
 			fmt.Fprintf(cmd.OutOrStdout(), "Note added to %s\n", resolvedID)
 			return nil
 		},
-	}
+	})
 }

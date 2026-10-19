@@ -2,10 +2,36 @@ package tk
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/Christophe1997/goalship/internal/ticket"
+	"github.com/Christophe1997/goalship/internal/ticket/tickettest"
 )
+
+func TestNewShowCmd_RunIDFindsRunTicket(t *testing.T) {
+	repo := newRunRepo(t)
+	dir := startRun(t, repo, "A")
+	id := tickettest.CreateInRun(t, repo, "A", "In run A")
+	raw, err := os.ReadFile(filepath.Join(dir, id+".md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := execCmd(t, NewShowCmd(), []string{"--run-id", "A", id})
+	if err != nil {
+		t.Fatalf("show --run-id A: %v", err)
+	}
+	if out != string(raw) {
+		t.Errorf("show --run-id A = %q, want %q", out, raw)
+	}
+
+	if _, err = execCmd(t, NewShowCmd(), []string{id}); !errors.Is(err, ticket.ErrNotFound) {
+		t.Errorf("show without --run-id: err = %v, want ticket.ErrNotFound", err)
+	}
+}
 
 func runShowForTest(t *testing.T, dir, id string) string {
 	t.Helper()

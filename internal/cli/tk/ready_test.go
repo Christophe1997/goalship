@@ -3,7 +3,34 @@ package tk
 import (
 	"bytes"
 	"testing"
+
+	"github.com/Christophe1997/goalship/internal/ticket/tickettest"
 )
+
+// newBlockedRun builds run A holding a blocker and a ticket depending on
+// it, next to a loose ticket that must never show up in run A's output.
+func newBlockedRun(t *testing.T) (blocker, blocked string) {
+	t.Helper()
+	repo := newRunRepo(t)
+	dir := startRun(t, repo, "A")
+	blocker = tickettest.CreateInRun(t, repo, "A", "Blocker")
+	blocked = tickettest.CreateInRun(t, repo, "A", "Blocked")
+	tickettest.DepIn(t, dir, blocked, blocker)
+	tickettest.Create(t, repo, "Loose")
+	return blocker, blocked
+}
+
+func TestNewReadyCmd_RunIDEvaluatesWithinRun(t *testing.T) {
+	blocker, _ := newBlockedRun(t)
+
+	out, err := execCmd(t, NewReadyCmd(), []string{"--run-id", "A"})
+	if err != nil {
+		t.Fatalf("ready --run-id A: %v", err)
+	}
+	if want := blocker + " [P2][open] - Blocker\n"; out != want {
+		t.Errorf("ready --run-id A = %q, want %q", out, want)
+	}
+}
 
 func TestNewReadyCmd_NoDepsIsReady(t *testing.T) {
 	dir := t.TempDir()

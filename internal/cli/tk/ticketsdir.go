@@ -7,6 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/spf13/cobra"
+
+	"github.com/Christophe1997/goalship/internal/runfolder"
 	"github.com/Christophe1997/goalship/internal/ticket"
 )
 
@@ -63,6 +66,51 @@ func findOrInitTicketsDir() (string, error) {
 		return ".tickets", nil
 	}
 	return dir, nil
+}
+
+const runIDFlag = "run-id"
+
+// withRunIDFlag registers --run-id on cmd, which selectTickets reads.
+func withRunIDFlag(cmd *cobra.Command) *cobra.Command {
+	cmd.Flags().String(runIDFlag, "", "Use this run's ticket folder instead of the loose tickets")
+	return cmd
+}
+
+// ticketsLocation is where a tk command works: dir holds its tickets, area
+// is the tickets area dir lives in (dir itself when no run is selected or
+// TICKETS_DIR overrides), and repoRoot is area's parent.
+type ticketsLocation struct {
+	repoRoot, area, dir string
+}
+
+// selectTickets locates the tickets area the way findTicketsDir (or, for
+// a write command, findOrInitTicketsDir) does, then narrows it to the
+// --run-id run's folder. Without --run-id the result is exactly today's.
+func selectTickets(cmd *cobra.Command, write bool) (ticketsLocation, error) {
+	find := findTicketsDir
+	if write {
+		find = findOrInitTicketsDir
+	}
+	area, err := find()
+	if err != nil {
+		return ticketsLocation{}, err
+	}
+	loc := ticketsLocation{repoRoot: filepath.Dir(area), area: area, dir: area}
+
+	runID, err := cmd.Flags().GetString(runIDFlag)
+	if err != nil || runID == "" {
+		return loc, err
+	}
+	if loc.dir, err = runfolder.Resolve(loc.repoRoot, runID, true); err != nil {
+		return ticketsLocation{}, err
+	}
+	return loc, nil
+}
+
+// findSelectedTicketsDir is selectTickets for a read command.
+func findSelectedTicketsDir(cmd *cobra.Command) (string, error) {
+	loc, err := selectTickets(cmd, false)
+	return loc.dir, err
 }
 
 func isDir(path string) bool {

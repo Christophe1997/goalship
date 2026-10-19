@@ -21,12 +21,12 @@ var runEditor = func(editor, path string) error {
 }
 
 func NewEditCmd() *cobra.Command {
-	return &cobra.Command{
+	return withRunIDFlag(&cobra.Command{
 		Use:   "edit <ticket-id>",
 		Short: "Edit a ticket's raw file in $EDITOR",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ticketsDir, err := findTicketsDir()
+			ticketsDir, err := findSelectedTicketsDir(cmd)
 			if err != nil {
 				return err
 			}
@@ -50,5 +50,5 @@ func NewEditCmd() *cobra.Command {
 			}
 			return runEditor(editor, path)
 		},
-	}
+	})
 }

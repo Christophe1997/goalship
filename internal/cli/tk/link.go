@@ -12,7 +12,7 @@ import (
 var linkUsageErr = errors.New("Usage: ticket link <id> <id> [id...]")
 
 func NewLinkCmd() *cobra.Command {
-	return &cobra.Command{
+	return withRunIDFlag(&cobra.Command{
 		Use:   "link <id> <id> [id...]",
 		Short: "Link tickets together (symmetric)",
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -21,11 +21,11 @@ func NewLinkCmd() *cobra.Command {
 			}
 			return runLink(cmd, args)
 		},
-	}
+	})
 }
 
 func runLink(cmd *cobra.Command, rawIDs []string) error {
-	ticketsDir, err := findTicketsDir()
+	ticketsDir, err := findSelectedTicketsDir(cmd)
 	if err != nil {
 		return err
 	}

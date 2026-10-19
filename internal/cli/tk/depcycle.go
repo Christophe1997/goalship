@@ -12,17 +12,17 @@ import (
 )
 
 func newDepCycleCmd() *cobra.Command {
-	return &cobra.Command{
+	return withRunIDFlag(&cobra.Command{
 		Use:   "cycle",
 		Short: "Find dependency cycles across all open tickets",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runDepCycle(cmd)
 		},
-	}
+	})
 }
 
 func runDepCycle(cmd *cobra.Command) error {
-	ticketsDir, err := findTicketsDir()
+	ticketsDir, err := findSelectedTicketsDir(cmd)
 	if err != nil {
 		return err
 	}

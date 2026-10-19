@@ -15,7 +15,7 @@ func NewLsCmd() *cobra.Command {
 		Aliases: []string{"list"},
 		Short:   "List tickets",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ticketsDir, err := findTicketsDir()
+			ticketsDir, err := findSelectedTicketsDir(cmd)
 			if err != nil {
 				return err
 			}
@@ -49,5 +49,5 @@ func NewLsCmd() *cobra.Command {
 	cmd.Flags().StringVarP(&assignee, "assignee", "a", "", "Filter by assignee")
 	cmd.Flags().StringVarP(&tag, "tag", "T", "", "Filter by tag")
 
-	return cmd
+	return withRunIDFlag(cmd)
 }
