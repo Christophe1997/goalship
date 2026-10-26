@@ -5,37 +5,9 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
-
-func TestRunDir_SanitizesLikeLedgerAndStaysInsideArea(t *testing.T) {
-	area := filepath.Join("/repo", ".tickets")
-	tests := []struct {
-		runID string
-		want  string
-	}{
-		{"abc123def456", filepath.Join(area, "abc123def456")},
-		{"../evil", filepath.Join(area, ".._evil")},
-		{"a/b", filepath.Join(area, "a_b")},
-	}
-	for _, tt := range tests {
-		got, err := RunDir(area, tt.runID)
-		if err != nil {
-			t.Fatalf("RunDir(%q): %v", tt.runID, err)
-		}
-		if got != tt.want {
-			t.Errorf("RunDir(%q) = %q, want %q", tt.runID, got, tt.want)
-		}
-	}
-}
-
-func TestRunDir_RefusesDotDotDotAndEmpty(t *testing.T) {
-	for _, runID := range []string{".", "..", ""} {
-		if got, err := RunDir("/repo/.tickets", runID); err == nil {
-			t.Errorf("RunDir(%q) = %q, want an error", runID, got)
-		}
-	}
-}
 
 func TestRunSummary_RoundTrips(t *testing.T) {
 	dir := t.TempDir()
@@ -129,5 +101,20 @@ func TestListRunDirs_MissingAreaIsEmpty(t *testing.T) {
 	got, err := ListRunDirs(filepath.Join(t.TempDir(), "absent"))
 	if err != nil || len(got) != 0 {
 		t.Errorf("ListRunDirs(absent) = (%v, %v), want (empty, nil)", got, err)
+	}
+}
+
+func TestRunSummary_CorruptFileErrorNamesRecovery(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, RunSummaryFile), []byte("<<<<<<< HEAD\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, readErr := ReadRunSummary(dir)
+	writeErr := WriteRunSummary(dir, RunSummary{RunID: "r1"})
+	for name, err := range map[string]error{"ReadRunSummary": readErr, "WriteRunSummary": writeErr} {
+		if err == nil || !strings.Contains(err.Error(), "fix or delete it") {
+			t.Errorf("%s error = %v, want one naming the recovery", name, err)
+		}
 	}
 }

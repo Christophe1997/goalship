@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Christophe1997/goalship/internal/ledger"
+	"github.com/Christophe1997/goalship/internal/runfolder"
 	"github.com/Christophe1997/goalship/internal/ticket"
 )
 
@@ -90,10 +91,13 @@ func NewLedgerCmd() *cobra.Command {
 				}
 			}
 
-			if err := state.Save(repoRoot); err != nil {
+			// run.json goes first: it is derived from state, so a retry
+			// rewrites it harmlessly, whereas a saved mutation such as
+			// --ship would be applied twice.
+			if err := writeRunSummary(repoRoot, state); err != nil {
 				return err
 			}
-			if err := writeRunSummary(repoRoot, state); err != nil {
+			if err := state.Save(repoRoot); err != nil {
 				return err
 			}
 
@@ -124,7 +128,7 @@ func NewLedgerCmd() *cobra.Command {
 // holds run.json (a committed run whose git-excluded ledger is gone) seeds
 // the recreated ledger's goal and outcome, so recovery never blanks them.
 func assignRunFolder(repoRoot string, state *ledger.RunState) error {
-	runDir, err := ticket.RunDir(ticket.ResolveTicketsDir(repoRoot), state.RunID)
+	runDir, err := runfolder.RunDir(ticket.ResolveTicketsDir(repoRoot), state.RunID)
 	if err != nil {
 		return fmt.Errorf("loop ledger: %w", err)
 	}
@@ -150,10 +154,13 @@ func assignRunFolder(repoRoot string, state *ledger.RunState) error {
 // folder's run.json, creating the folder on first write. Goalship never
 // stages or commits it (R12); the orchestrating skill decides that.
 func writeRunSummary(repoRoot string, state *ledger.RunState) error {
-	if state.TicketsDir == nil {
+	runDir, ok, err := runfolder.RecordedDir(repoRoot, state)
+	if err != nil {
+		return fmt.Errorf("loop ledger: %w", err)
+	}
+	if !ok {
 		return nil
 	}
-	runDir := filepath.Join(repoRoot, filepath.FromSlash(*state.TicketsDir))
 	if err := os.MkdirAll(runDir, 0o755); err != nil {
 		return fmt.Errorf("loop ledger: create %s: %w", runDir, err)
 	}

@@ -10,6 +10,7 @@ import (
 
 	"github.com/spf13/pflag"
 
+	"github.com/Christophe1997/goalship/internal/ledger"
 	"github.com/Christophe1997/goalship/internal/ticket"
 )
 
@@ -335,5 +336,67 @@ func TestLedgerCmd_RecreatedLedgerKeepsRunSummary(t *testing.T) {
 	}
 	if got.Goal != "G" || got.TerminalState == nil || *got.TerminalState != "exhausted" {
 		t.Errorf("recreated ledger = goal %q terminal %v, want them seeded from run.json", got.Goal, got.TerminalState)
+	}
+}
+
+func execLedgerErr(t *testing.T, args []string) error {
+	t.Helper()
+	cmd := NewLedgerCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs(args)
+	return cmd.Execute()
+}
+
+func TestLedgerCmd_RefusesRecordedTicketsDirOutsideArea(t *testing.T) {
+	t.Setenv(ticket.TicketsDirEnv, "")
+	repoRoot := newLoopTestRepo(t)
+	escape := "../escape"
+	if err := (&ledger.RunState{RunID: "r1", TicketsDir: &escape}).Save(repoRoot); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := execLedgerErr(t, []string{repoRoot, "--run-id", "r1", "--ship"}); err == nil {
+		t.Fatal("want an error for a tickets_dir outside the tickets area")
+	}
+	if _, err := os.Stat(filepath.Join(filepath.Dir(repoRoot), "escape")); !os.IsNotExist(err) {
+		t.Errorf("folder outside the repo exists (err %v), want none created", err)
+	}
+}
+
+func TestLedgerCmd_RecordedFolderKeptUnderTicketsDirOverride(t *testing.T) {
+	t.Setenv(ticket.TicketsDirEnv, "")
+	repoRoot := newLoopTestRepo(t)
+	execCmd(t, NewLedgerCmd(), []string{repoRoot, "--run-id", "r1", "--goal", "G"})
+	t.Setenv(ticket.TicketsDirEnv, filepath.Join(t.TempDir(), "custom"))
+
+	execCmd(t, NewLedgerCmd(), []string{repoRoot, "--run-id", "r1", "--goal", "G2"})
+
+	if summary := readRunSummary(t, repoRoot, "r1"); summary.Goal != "G2" {
+		t.Errorf("run.json goal = %q, want G2", summary.Goal)
+	}
+}
+
+func TestLedgerCmd_RunSummaryFailureLeavesLedgerUnchanged(t *testing.T) {
+	t.Setenv(ticket.TicketsDirEnv, "")
+	repoRoot := newLoopTestRepo(t)
+	execCmd(t, NewLedgerCmd(), []string{repoRoot, "--run-id", "r1"})
+	summaryPath := filepath.Join(repoRoot, ".tickets", "r1", ticket.RunSummaryFile)
+	if err := os.Remove(summaryPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(summaryPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := execLedgerErr(t, []string{repoRoot, "--run-id", "r1", "--ship"}); err == nil {
+		t.Fatal("want an error when run.json cannot be written")
+	}
+	state, err := ledger.LoadRunState(repoRoot, "r1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.ShippedCount != 0 {
+		t.Errorf("shipped_count = %d, want 0: a failed command must not persist its mutation", state.ShippedCount)
 	}
 }

@@ -8,6 +8,7 @@ import (
 
 	"github.com/Christophe1997/goalship/internal/gitops"
 	"github.com/Christophe1997/goalship/internal/ledger"
+	"github.com/Christophe1997/goalship/internal/runfolder"
 	"github.com/Christophe1997/goalship/internal/ticket"
 	"github.com/Christophe1997/goalship/internal/ticket/tickettest"
 )
@@ -33,7 +34,7 @@ func saveRunState(t *testing.T, repoRoot string, state *ledger.RunState) {
 // run.json. It returns the folder.
 func saveRunWithFolder(t *testing.T, repoRoot string, state *ledger.RunState) string {
 	t.Helper()
-	dir, err := ticket.RunDir(ticket.ResolveTicketsDir(repoRoot), state.RunID)
+	dir, err := runfolder.RunDir(ticket.ResolveTicketsDir(repoRoot), state.RunID)
 	if err != nil {
 		t.Fatalf("run dir: %v", err)
 	}

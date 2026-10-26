@@ -23,9 +23,9 @@ func Resolve(repoRoot, runID string, allowLedgerless bool) (string, error) {
 		return v, nil
 	}
 	area := ticket.ResolveTicketsDir(repoRoot)
-	runDir, err := ticket.RunDir(area, runID)
+	runDir, err := RunDir(area, runID)
 	if err != nil {
-		return "", fmt.Errorf("runfolder: %w", err)
+		return "", err
 	}
 
 	ledgerPath := ledger.ResolveLedgerPath(repoRoot, runID)
@@ -36,10 +36,14 @@ func Resolve(repoRoot, runID string, allowLedgerless bool) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("runfolder: %w", err)
 		}
-		if state.TicketsDir == nil {
+		dir, ok, err := RecordedDir(repoRoot, state)
+		if err != nil {
+			return "", err
+		}
+		if !ok {
 			return area, nil
 		}
-		return filepath.Join(repoRoot, filepath.FromSlash(*state.TicketsDir)), nil
+		return dir, nil
 	case !errors.Is(err, os.ErrNotExist):
 		return "", fmt.Errorf("runfolder: %w", err)
 	}
@@ -50,6 +54,35 @@ func Resolve(repoRoot, runID string, allowLedgerless bool) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("runfolder: unknown run %q (no ledger at %s)", runID, ledgerPath)
+}
+
+// RunDir returns runID's folder inside areaDir. The folder name is
+// sanitized exactly as the run's ledger file name is, and a name that
+// would escape or alias the area itself is refused.
+func RunDir(areaDir, runID string) (string, error) {
+	safe := ledger.SafeRunID(runID)
+	if safe == "" || safe == "." || safe == ".." {
+		return "", fmt.Errorf("runfolder: invalid run id %q", runID)
+	}
+	return filepath.Join(areaDir, safe), nil
+}
+
+// RecordedDir returns the run folder state's ledger records, or ok false for
+// a legacy run that records none. tk and loop write wherever a ledger
+// points, and a ledger can be hand-edited, so a folder outside the default
+// tickets area (outside the repo, or where commit and reset would stage or
+// clean it) is refused.
+func RecordedDir(repoRoot string, state *ledger.RunState) (dir string, ok bool, err error) {
+	if state.TicketsDir == nil {
+		return "", false, nil
+	}
+	area := ticket.DefaultTicketsDir(repoRoot)
+	dir = filepath.Join(repoRoot, filepath.FromSlash(*state.TicketsDir))
+	if rel, err := filepath.Rel(area, dir); err != nil || !filepath.IsLocal(rel) {
+		return "", false, fmt.Errorf("runfolder: run %q records tickets_dir %q outside %s",
+			state.RunID, *state.TicketsDir, area)
+	}
+	return dir, true, nil
 }
 
 // All returns the tickets area followed by every run folder inside it.

@@ -22,8 +22,9 @@ const TicketsDirEnv = "TICKETS_DIR"
 
 // ResolveTicketsDir returns the tickets area for repoRoot: the TICKETS_DIR
 // override when set, else repoRoot's ".tickets" subdirectory. Run folders
-// (RunDir) live inside the area; commit, reset and dirty-tree exclusions
-// stay keyed to the whole area so no run's folder is staged or cleaned.
+// (runfolder.RunDir) live inside the area; commit, reset and dirty-tree
+// exclusions stay keyed to the whole area so no run's folder is staged or
+// cleaned.
 // Unlike tk's own cwd-relative walk-up, this never searches parent
 // directories — callers here already have an explicit repoRoot instead of
 // relying on cwd.
@@ -31,6 +32,12 @@ func ResolveTicketsDir(repoRoot string) string {
 	if v := os.Getenv(TicketsDirEnv); v != "" {
 		return v
 	}
+	return DefaultTicketsDir(repoRoot)
+}
+
+// DefaultTicketsDir returns repoRoot's ".tickets" area, ignoring any
+// TICKETS_DIR override.
+func DefaultTicketsDir(repoRoot string) string {
 	return filepath.Join(repoRoot, ".tickets")
 }
 

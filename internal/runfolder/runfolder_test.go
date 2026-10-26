@@ -35,6 +35,35 @@ func makeRunFolder(t *testing.T, dir string) {
 
 func ptr(s string) *string { return &s }
 
+func TestRunDir_SanitizesLikeLedgerAndStaysInsideArea(t *testing.T) {
+	area := filepath.Join("/repo", ".tickets")
+	tests := []struct {
+		runID string
+		want  string
+	}{
+		{"abc123def456", filepath.Join(area, "abc123def456")},
+		{"../evil", filepath.Join(area, ".._evil")},
+		{"a/b", filepath.Join(area, "a_b")},
+	}
+	for _, tt := range tests {
+		got, err := RunDir(area, tt.runID)
+		if err != nil {
+			t.Fatalf("RunDir(%q): %v", tt.runID, err)
+		}
+		if got != tt.want {
+			t.Errorf("RunDir(%q) = %q, want %q", tt.runID, got, tt.want)
+		}
+	}
+}
+
+func TestRunDir_RefusesDotDotDotAndEmpty(t *testing.T) {
+	for _, runID := range []string{".", "..", ""} {
+		if got, err := RunDir("/repo/.tickets", runID); err == nil {
+			t.Errorf("RunDir(%q) = %q, want an error", runID, got)
+		}
+	}
+}
+
 func TestResolve_LedgerTicketsDir(t *testing.T) {
 	repo := newRepo(t)
 	saveLedger(t, repo, "r1", ptr(".tickets/r1"))
@@ -171,5 +200,16 @@ func TestAll_TicketsDirEnv(t *testing.T) {
 	want := []string{override, filepath.Join(override, "r1")}
 	if !slices.Equal(got, want) {
 		t.Fatalf("got %v, want %v", got, want)
+	}
+}
+
+func TestResolve_RefusesRecordedTicketsDirOutsideArea(t *testing.T) {
+	for _, recorded := range []string{"../outside", "/abs/.tickets/r1", "src/r1", ".tickets/../src"} {
+		repo := newRepo(t)
+		saveLedger(t, repo, "r1", ptr(recorded))
+
+		if got, err := Resolve(repo, "r1", false); err == nil {
+			t.Errorf("tickets_dir %q: got %q, want an error", recorded, got)
+		}
 	}
 }

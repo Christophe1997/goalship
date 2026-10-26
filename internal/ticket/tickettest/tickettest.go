@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Christophe1997/goalship/internal/runfolder"
 	"github.com/Christophe1997/goalship/internal/ticket"
 )
 
@@ -28,7 +29,7 @@ func Create(t testing.TB, repoRoot, title string) string {
 func CreateInRun(t testing.TB, repoRoot, runID, title string) string {
 	t.Helper()
 	area := ticket.ResolveTicketsDir(repoRoot)
-	dir, err := ticket.RunDir(area, runID)
+	dir, err := runfolder.RunDir(area, runID)
 	if err != nil {
 		t.Fatalf("tickettest: run dir: %v", err)
 	}

@@ -10,7 +10,6 @@ import (
 	"sort"
 
 	"github.com/Christophe1997/goalship/internal/atomicfile"
-	"github.com/Christophe1997/goalship/internal/ledger"
 )
 
 // RunSummaryFile marks a directory inside the tickets area as a run folder.
@@ -27,17 +26,6 @@ type RunSummary struct {
 	Outcome   *string `json:"outcome"`
 }
 
-// RunDir returns runID's folder inside areaDir. The folder name is
-// sanitized exactly as the run's ledger file name is, and a name that
-// would escape or alias the area itself is refused.
-func RunDir(areaDir, runID string) (string, error) {
-	safe := ledger.SafeRunID(runID)
-	if safe == "" || safe == "." || safe == ".." {
-		return "", fmt.Errorf("ticket: invalid run id %q", runID)
-	}
-	return filepath.Join(areaDir, safe), nil
-}
-
 // ReadRunSummary loads runDir's run.json; a missing file wraps
 // os.ErrNotExist.
 func ReadRunSummary(runDir string) (*RunSummary, error) {
@@ -46,9 +34,13 @@ func ReadRunSummary(runDir string) (*RunSummary, error) {
 	if err != nil {
 		return nil, fmt.Errorf("ticket: read %s: %w", path, err)
 	}
+	return parseRunSummary(path, data)
+}
+
+func parseRunSummary(path string, data []byte) (*RunSummary, error) {
 	var s RunSummary
 	if err := json.Unmarshal(data, &s); err != nil {
-		return nil, fmt.Errorf("ticket: parse %s: %w", path, err)
+		return nil, fmt.Errorf("ticket: parse %s (fix or delete it): %w", path, err)
 	}
 	return &s, nil
 }
@@ -62,9 +54,9 @@ func WriteRunSummary(runDir string, s RunSummary) error {
 	existingData, err := os.ReadFile(path)
 	switch {
 	case err == nil:
-		var existing RunSummary
-		if err := json.Unmarshal(existingData, &existing); err != nil {
-			return fmt.Errorf("ticket: parse %s: %w", path, err)
+		existing, err := parseRunSummary(path, existingData)
+		if err != nil {
+			return err
 		}
 		if existing.StartedAt != "" {
 			s.StartedAt = existing.StartedAt

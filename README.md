@@ -126,7 +126,8 @@ goalship tk ls --all     # loose tickets, then "== <run-id>: <goal>" and its tic
   `tk link`, and `tk create --parent` refuse a target in another run or among
   the loose tickets.
 - `TICKETS_DIR`, when set, replaces the run folder everywhere, and a run
-  created while it is set gets no folder.
+  created while it is set gets no folder. The loop commands then accept any
+  `--run-id`, so a mistyped one is not caught.
 - Runs whose ledger was created before run folders existed keep using the
   loose tickets.
 

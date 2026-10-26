@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/Christophe1997/goalship/internal/ledger"
+	"github.com/Christophe1997/goalship/internal/runfolder"
 	"github.com/Christophe1997/goalship/internal/ticket"
 	"github.com/Christophe1997/goalship/internal/ticket/tickettest"
 )
@@ -673,7 +674,7 @@ func patchTitle(t *testing.T, tokenURL, id, title string) int {
 
 func runFolder(t *testing.T, repoRoot, runID string) string {
 	t.Helper()
-	dir, err := ticket.RunDir(ticket.ResolveTicketsDir(repoRoot), runID)
+	dir, err := runfolder.RunDir(ticket.ResolveTicketsDir(repoRoot), runID)
 	if err != nil {
 		t.Fatalf("RunDir: %v", err)
 	}
