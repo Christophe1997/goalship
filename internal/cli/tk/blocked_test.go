@@ -5,10 +5,22 @@ import (
 	"testing"
 )
 
+func TestNewBlockedCmd_RunIDEvaluatesWithinRun(t *testing.T) {
+	blocker, blocked := newBlockedRun(t)
+
+	out, err := execCmd(t, NewBlockedCmd(), []string{"--run-id", "A"})
+	if err != nil {
+		t.Fatalf("blocked --run-id A: %v", err)
+	}
+	if want := blocked + " [P2][open] - Blocked <- [" + blocker + "]\n"; out != want {
+		t.Errorf("blocked --run-id A = %q, want %q", out, want)
+	}
+}
+
 func TestNewBlockedCmd_NoDepsNotBlocked(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("TICKETS_DIR", dir)
-	if _, err := runCreate(dir, createOptions{title: "T", ticketType: "task", priority: 2}); err != nil {
+	if _, err := createLoose(dir, createOptions{title: "T", ticketType: "task", priority: 2}); err != nil {
 		t.Fatalf("runCreate: %v", err)
 	}
 
@@ -26,11 +38,11 @@ func TestNewBlockedCmd_NoDepsNotBlocked(t *testing.T) {
 func TestNewBlockedCmd_OpenDepIsBlockedWithFormattedBlockerList(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("TICKETS_DIR", dir)
-	depID, err := runCreate(dir, createOptions{title: "Dep", ticketType: "task", priority: 2})
+	depID, err := createLoose(dir, createOptions{title: "Dep", ticketType: "task", priority: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
-	id, err := runCreate(dir, createOptions{title: "Main", ticketType: "task", priority: 2})
+	id, err := createLoose(dir, createOptions{title: "Main", ticketType: "task", priority: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,14 +63,14 @@ func TestNewBlockedCmd_OpenDepIsBlockedWithFormattedBlockerList(t *testing.T) {
 func TestNewBlockedCmd_ClosedDepNotBlocked(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("TICKETS_DIR", dir)
-	depID, err := runCreate(dir, createOptions{title: "Dep", ticketType: "task", priority: 2})
+	depID, err := createLoose(dir, createOptions{title: "Dep", ticketType: "task", priority: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := runStatus(dir, depID, "closed"); err != nil {
 		t.Fatal(err)
 	}
-	id, err := runCreate(dir, createOptions{title: "Main", ticketType: "task", priority: 2})
+	id, err := createLoose(dir, createOptions{title: "Main", ticketType: "task", priority: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +96,7 @@ func TestNewBlockedCmd_ClosedDepNotBlocked(t *testing.T) {
 func TestNewBlockedCmd_DanglingDepCountsAsBlocker(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("TICKETS_DIR", dir)
-	id, err := runCreate(dir, createOptions{title: "Main", ticketType: "task", priority: 2})
+	id, err := createLoose(dir, createOptions{title: "Main", ticketType: "task", priority: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,7 +123,7 @@ func TestNewBlockedCmd_DanglingDepCountsAsBlocker(t *testing.T) {
 func TestNewBlockedCmd_NonBracketDepsStillAppearsBlocked(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("TICKETS_DIR", dir)
-	depID, err := runCreate(dir, createOptions{title: "Dep", ticketType: "task", priority: 2})
+	depID, err := createLoose(dir, createOptions{title: "Dep", ticketType: "task", priority: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,18 +149,18 @@ func TestNewBlockedCmd_NonBracketDepsStillAppearsBlocked(t *testing.T) {
 func TestNewBlockedCmd_OnlyListsUnresolvedBlockers(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("TICKETS_DIR", dir)
-	closedDep, err := runCreate(dir, createOptions{title: "Closed dep", ticketType: "task", priority: 2})
+	closedDep, err := createLoose(dir, createOptions{title: "Closed dep", ticketType: "task", priority: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := runStatus(dir, closedDep, "closed"); err != nil {
 		t.Fatal(err)
 	}
-	openDep, err := runCreate(dir, createOptions{title: "Open dep", ticketType: "task", priority: 2})
+	openDep, err := createLoose(dir, createOptions{title: "Open dep", ticketType: "task", priority: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
-	id, err := runCreate(dir, createOptions{title: "Main", ticketType: "task", priority: 2})
+	id, err := createLoose(dir, createOptions{title: "Main", ticketType: "task", priority: 2})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -9,11 +9,11 @@ import (
 )
 
 func NewQueryCmd() *cobra.Command {
-	return &cobra.Command{
+	return withRunIDFlag(&cobra.Command{
 		Use:   "query [jq-filter]",
 		Short: "Output tickets as JSON, optionally filtered",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ticketsDir, err := findTicketsDir()
+			ticketsDir, err := findSelectedTicketsDir(cmd)
 			if err != nil {
 				return err
 			}
@@ -33,5 +33,5 @@ func NewQueryCmd() *cobra.Command {
 			}
 			return nil
 		},
-	}
+	})
 }

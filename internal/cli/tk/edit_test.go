@@ -9,7 +9,7 @@ import (
 func TestNewEditCmd_NonInteractivePrintsPathWithoutLaunching(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("TICKETS_DIR", dir)
-	id, err := runCreate(dir, createOptions{title: "T", ticketType: "task", priority: 2})
+	id, err := createLoose(dir, createOptions{title: "T", ticketType: "task", priority: 2})
 	if err != nil {
 		t.Fatalf("runCreate: %v", err)
 	}
@@ -44,7 +44,7 @@ func TestNewEditCmd_InteractiveLaunchesEditorOnResolvedPath(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("TICKETS_DIR", dir)
 	t.Setenv("EDITOR", "my-editor")
-	id, err := runCreate(dir, createOptions{title: "T", ticketType: "task", priority: 2})
+	id, err := createLoose(dir, createOptions{title: "T", ticketType: "task", priority: 2})
 	if err != nil {
 		t.Fatalf("runCreate: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestNewEditCmd_DefaultsToViWhenEditorUnset(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("TICKETS_DIR", dir)
 	t.Setenv("EDITOR", "")
-	id, err := runCreate(dir, createOptions{title: "T", ticketType: "task", priority: 2})
+	id, err := createLoose(dir, createOptions{title: "T", ticketType: "task", priority: 2})
 	if err != nil {
 		t.Fatalf("runCreate: %v", err)
 	}

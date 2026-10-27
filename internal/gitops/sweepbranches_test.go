@@ -86,7 +86,7 @@ func TestSweepBranches_ReportOnly_MergedNotInOpenGraph_WouldDelete(t *testing.T)
 	pushBranchFixture(t, repoRoot, "feat/sweep-me")
 	fakeGHSweep(t, "[]", map[string]string{"PR1": "MERGED"})
 
-	got, err := SweepBranches(repoRoot, "gh", false)
+	got, err := SweepBranches(repoRoot, []string{ticketsDir(repoRoot)}, "gh", false)
 	if err != nil {
 		t.Fatalf("SweepBranches: %v", err)
 	}
@@ -113,7 +113,7 @@ func TestSweepBranches_MergedButReusedAsOpenPRHead_NotEligible(t *testing.T) {
 	openPRsJSON := `[{"number":2,"url":"https://github.com/o/r/pull/2","baseRefName":"main","headRefName":"feat/reused"}]`
 	fakeGHSweep(t, openPRsJSON, map[string]string{"PR1": "MERGED"})
 
-	got, err := SweepBranches(repoRoot, "gh", false)
+	got, err := SweepBranches(repoRoot, []string{ticketsDir(repoRoot)}, "gh", false)
 	if err != nil {
 		t.Fatalf("SweepBranches: %v", err)
 	}
@@ -133,7 +133,7 @@ func TestSweepBranches_MergedButIsOpenPRBase_NotEligible(t *testing.T) {
 	openPRsJSON := `[{"number":2,"url":"https://github.com/o/r/pull/2","baseRefName":"feat/base-in-use","headRefName":"feat/child"}]`
 	fakeGHSweep(t, openPRsJSON, map[string]string{"PR1": "MERGED"})
 
-	got, err := SweepBranches(repoRoot, "gh", false)
+	got, err := SweepBranches(repoRoot, []string{ticketsDir(repoRoot)}, "gh", false)
 	if err != nil {
 		t.Fatalf("SweepBranches: %v", err)
 	}
@@ -156,7 +156,7 @@ func TestSweepBranches_MergedButIsForkPRBase_NotEligible(t *testing.T) {
 	openPRsJSON := `[{"number":2,"url":"https://github.com/o/r/pull/2","baseRefName":"feat/fork-target","headRefName":"contrib","isCrossRepository":true}]`
 	fakeGHSweep(t, openPRsJSON, map[string]string{"PR1": "MERGED"})
 
-	got, err := SweepBranches(repoRoot, "gh", false)
+	got, err := SweepBranches(repoRoot, []string{ticketsDir(repoRoot)}, "gh", false)
 	if err != nil {
 		t.Fatalf("SweepBranches: %v", err)
 	}
@@ -178,7 +178,7 @@ func TestSweepBranches_MergedBranchNamedLikeForkPRHead_StillEligible(t *testing.
 	openPRsJSON := `[{"number":2,"url":"https://github.com/o/r/pull/2","baseRefName":"main","headRefName":"feat/clash","isCrossRepository":true}]`
 	fakeGHSweep(t, openPRsJSON, map[string]string{"PR1": "MERGED"})
 
-	got, err := SweepBranches(repoRoot, "gh", false)
+	got, err := SweepBranches(repoRoot, []string{ticketsDir(repoRoot)}, "gh", false)
 	if err != nil {
 		t.Fatalf("SweepBranches: %v", err)
 	}
@@ -199,7 +199,7 @@ func TestSweepBranches_ForkPRFromItsMainIntoMain_DoesNotHardFail(t *testing.T) {
 	openPRsJSON := `[{"number":2,"url":"https://github.com/o/r/pull/2","baseRefName":"main","headRefName":"main","isCrossRepository":true}]`
 	fakeGHSweep(t, openPRsJSON, map[string]string{"PR1": "MERGED"})
 
-	got, err := SweepBranches(repoRoot, "gh", false)
+	got, err := SweepBranches(repoRoot, []string{ticketsDir(repoRoot)}, "gh", false)
 	if err != nil {
 		t.Fatalf("SweepBranches: %v", err)
 	}
@@ -218,7 +218,7 @@ func TestSweepBranches_BranchNoteWithoutPRNote_NotEligible(t *testing.T) {
 
 	fakeGHSweep(t, "[]", nil)
 
-	got, err := SweepBranches(repoRoot, "gh", false)
+	got, err := SweepBranches(repoRoot, []string{ticketsDir(repoRoot)}, "gh", false)
 	if err != nil {
 		t.Fatalf("SweepBranches: %v", err)
 	}
@@ -236,7 +236,7 @@ func TestSweepBranches_PRStateOpen_NotEligible(t *testing.T) {
 
 	fakeGHSweep(t, "[]", map[string]string{"PR1": "OPEN"})
 
-	got, err := SweepBranches(repoRoot, "gh", false)
+	got, err := SweepBranches(repoRoot, []string{ticketsDir(repoRoot)}, "gh", false)
 	if err != nil {
 		t.Fatalf("SweepBranches: %v", err)
 	}
@@ -255,7 +255,7 @@ func TestSweepBranches_PRStateClosed_NotEligible(t *testing.T) {
 
 	fakeGHSweep(t, "[]", map[string]string{"PR1": "CLOSED"})
 
-	got, err := SweepBranches(repoRoot, "gh", false)
+	got, err := SweepBranches(repoRoot, []string{ticketsDir(repoRoot)}, "gh", false)
 	if err != nil {
 		t.Fatalf("SweepBranches: %v", err)
 	}
@@ -284,7 +284,7 @@ func TestSweepBranches_PRStateLookupFails_SkipsThatCandidateOnly(t *testing.T) {
 
 	fakeGHSweep(t, "[]", map[string]string{"PROK": "MERGED"}) // PRFAIL unrecognized -> lookup failure
 
-	got, err := SweepBranches(repoRoot, "gh", false)
+	got, err := SweepBranches(repoRoot, []string{ticketsDir(repoRoot)}, "gh", false)
 	if err != nil {
 		t.Fatalf("SweepBranches: %v", err)
 	}
@@ -311,7 +311,7 @@ func TestSweepBranches_MalformedOpenPRGraph_HardFailsBeforeEvaluatingCandidates(
 	openPRsJSON := `[{"number":9,"url":"https://github.com/o/r/pull/9","baseRefName":"feat/self","headRefName":"feat/self"}]`
 	fakeGHSweep(t, openPRsJSON, map[string]string{"PR1": "MERGED"})
 
-	got, err := SweepBranches(repoRoot, "gh", false)
+	got, err := SweepBranches(repoRoot, []string{ticketsDir(repoRoot)}, "gh", false)
 	if err == nil {
 		t.Fatal("SweepBranches: want an error for a malformed open PR graph, got nil")
 	}
@@ -332,7 +332,7 @@ func TestSweepBranches_Execute_DeletesEligibleBranchFromOrigin(t *testing.T) {
 	pushBranchFixture(t, repoRoot, "feat/execute-me")
 	fakeGHSweep(t, "[]", map[string]string{"PR1": "MERGED"})
 
-	got, err := SweepBranches(repoRoot, "gh", true)
+	got, err := SweepBranches(repoRoot, []string{ticketsDir(repoRoot)}, "gh", true)
 	if err != nil {
 		t.Fatalf("SweepBranches: %v", err)
 	}
@@ -391,7 +391,7 @@ exit 0`)
 
 	fakeGHSweep(t, "[]", map[string]string{"PR-PUSHED": "MERGED", "PR-PROTECTED": "MERGED"})
 
-	got, err := SweepBranches(repoRoot, "gh", true)
+	got, err := SweepBranches(repoRoot, []string{ticketsDir(repoRoot)}, "gh", true)
 	if err != nil {
 		t.Fatalf("SweepBranches: %v", err)
 	}
@@ -454,7 +454,7 @@ func TestSweepBranches_Execute_RechecksOpenPRsBeforeEachDelete(t *testing.T) {
 			ticketID := shippedTicket(t, repoRoot, "feat/target", "PR1")
 			fakeGHSweepLists(t, []string{"[]", tt.relist}, map[string]string{"PR1": "MERGED"})
 
-			got, err := SweepBranches(repoRoot, "gh", true)
+			got, err := SweepBranches(repoRoot, []string{ticketsDir(repoRoot)}, "gh", true)
 			if err != nil {
 				t.Fatalf("SweepBranches: %v", err)
 			}
@@ -483,7 +483,7 @@ func TestSweepBranches_Execute_BlockedDeleteDoesNotStopTheBatch(t *testing.T) {
 	const basedOnBlocked = `[{"number":7,"url":"u","baseRefName":"feat/blocked","headRefName":"feat/child"}]`
 	fakeGHSweepLists(t, []string{"[]", basedOnBlocked}, map[string]string{"PR-BLOCKED": "MERGED", "PR-FREE": "MERGED"})
 
-	got, err := SweepBranches(repoRoot, "gh", true)
+	got, err := SweepBranches(repoRoot, []string{ticketsDir(repoRoot)}, "gh", true)
 	if err != nil {
 		t.Fatalf("SweepBranches: %v", err)
 	}
@@ -510,7 +510,7 @@ func TestSweepBranches_BranchAbsentFromOrigin_NotACandidate(t *testing.T) {
 			shippedTicket(t, repoRoot, "feat/already-swept", "PR1")
 			callLog := fakeGHSweepLists(t, []string{"[]"}, map[string]string{"PR1": "MERGED"})
 
-			got, err := SweepBranches(repoRoot, "gh", execute)
+			got, err := SweepBranches(repoRoot, []string{ticketsDir(repoRoot)}, "gh", execute)
 			if err != nil {
 				t.Fatalf("SweepBranches: %v", err)
 			}
@@ -533,7 +533,7 @@ func TestSweepBranches_BranchNoteMatchingOnlyOtherOriginBranches_NotACandidate(t
 	shippedTicket(t, repoRoot, "feat/*", "PR1")
 	fakeGHSweep(t, "[]", map[string]string{"PR1": "MERGED"})
 
-	got, err := SweepBranches(repoRoot, "gh", false)
+	got, err := SweepBranches(repoRoot, []string{ticketsDir(repoRoot)}, "gh", false)
 	if err != nil {
 		t.Fatalf("SweepBranches: %v", err)
 	}
@@ -551,7 +551,7 @@ func TestSweepBranches_OriginUnreachable_IsHardError(t *testing.T) {
 	fakeGHSweep(t, "[]", map[string]string{"PR1": "MERGED"})
 	runOK(t, repoRoot, "git", "remote", "set-url", "origin", filepath.Join(t.TempDir(), "gone.git"))
 
-	got, err := SweepBranches(repoRoot, "gh", false)
+	got, err := SweepBranches(repoRoot, []string{ticketsDir(repoRoot)}, "gh", false)
 	var exitErr *ExitError
 	if !errors.As(err, &exitErr) {
 		t.Fatalf("err = %v, want the ls-remote *ExitError", err)
@@ -629,7 +629,7 @@ func TestSweepBranches_Execute_NoteReadFailsAfterDelete_ErrorNamesDeletedBranche
 	fakeGHSweep(t, "[]", map[string]string{"PR-ONE": "MERGED", "PR-TWO": "MERGED"})
 	failNoteReadFromCall(t, 2)
 
-	got, err := SweepBranches(repoRoot, "gh", true)
+	got, err := SweepBranches(repoRoot, []string{ticketsDir(repoRoot)}, "gh", true)
 	if got != nil {
 		t.Errorf("got = %+v, want nil on a hard error", got)
 	}
@@ -648,7 +648,7 @@ func TestSweepBranches_Execute_OriginBreaksAfterDelete_ErrorNamesDeletedBranches
 	fakeGHSweep(t, "[]", map[string]string{"PR-ONE": "MERGED", "PR-TWO": "MERGED"})
 	installOriginHook(t, repoRoot, "post-receive", fmt.Sprintf("unset GIT_DIR\ngit -C %q remote set-url origin /nonexistent/origin.git", repoRoot))
 
-	got, err := SweepBranches(repoRoot, "gh", true)
+	got, err := SweepBranches(repoRoot, []string{ticketsDir(repoRoot)}, "gh", true)
 	if got != nil {
 		t.Errorf("got = %+v, want nil on a hard error", got)
 	}
@@ -662,7 +662,7 @@ func TestSweepBranches_Execute_NoteReadFailsBeforeAnyDelete_ErrorReturnedUnwrapp
 	fakeGHSweep(t, "[]", map[string]string{"PR-ONE": "MERGED"})
 	failNoteReadFromCall(t, 1)
 
-	_, err := SweepBranches(repoRoot, "gh", true)
+	_, err := SweepBranches(repoRoot, []string{ticketsDir(repoRoot)}, "gh", true)
 	if !errors.Is(err, errInjectedNoteRead) || strings.Contains(err.Error(), "sweep aborted") {
 		t.Errorf("err = %v, want the bare note-read failure with nothing deleted to report", err)
 	}

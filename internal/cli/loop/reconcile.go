@@ -36,12 +36,18 @@ func reconcileActionsJSON(actions []gitops.ReconciliationAction) []reconcileActi
 }
 
 func NewReconcileCmd() *cobra.Command {
-	return &cobra.Command{
+	var runID string
+
+	cmd := &cobra.Command{
 		Use:   "reconcile <repo-root>",
-		Short: "Cross-check every in-progress ticket against git/PR state",
+		Short: "Cross-check every in-progress ticket of a run against git/PR state",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			report, err := gitops.Reconcile(args[0])
+			ticketsDir, err := runTicketsDir("reconcile", args[0], runID)
+			if err != nil {
+				return err
+			}
+			report, err := gitops.Reconcile(args[0], ticketsDir)
 			if err != nil {
 				return err
 			}
@@ -51,4 +57,7 @@ func NewReconcileCmd() *cobra.Command {
 			})
 		},
 	}
+
+	cmd.Flags().StringVar(&runID, "run-id", "", runIDFlagUsage)
+	return cmd
 }

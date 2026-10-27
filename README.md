@@ -91,6 +91,49 @@ cleared by `reset`.
 
 Run `goalship <command> --help` for every command's arguments and flags.
 
+### Run folders
+
+Each run keeps its tickets in its own folder, `.tickets/<run-id>/`.
+`goalship loop ledger` creates the folder when it creates a new run, and
+writes a `run.json` summary into it:
+
+```json
+{
+  "run_id": "<run-id>",
+  "goal": "Add login",
+  "started_at": "2026-10-19T09:00:00Z",
+  "outcome": null
+}
+```
+
+`outcome` stays `null` until the run ends, then holds the terminal state
+`loop ledger --terminal` recorded. Tickets left directly in `.tickets/` are
+loose tickets that sit in no run folder.
+
+```sh
+goalship tk create "Add login endpoint" --run-id <run-id>   # ticket in the run's folder
+goalship tk ready --run-id <run-id>
+goalship tk ls                                              # loose tickets only
+goalship tk ls --all     # loose tickets, then "== <run-id>: <goal>" and its tickets per run
+```
+
+- Every `goalship tk` command takes `--run-id`. Without it, tk works on the
+  loose tickets in `.tickets/`, as before.
+- `goalship loop claim`, `ship`, `reconcile`, `resolve-base`, and `run-branch`
+  require `--run-id` and refuse an unknown run.
+- `goalship review <run-id>` shows only that run's tickets.
+- Dependencies, links, and parents must stay within one run. `tk dep`,
+  `tk link`, and `tk create --parent` refuse a target in another run or among
+  the loose tickets.
+- `TICKETS_DIR`, when set, replaces the run folder everywhere, and a run
+  created while it is set gets no folder. The loop commands then accept any
+  `--run-id`, so a mistyped one is not caught.
+- Runs whose ledger was created before run folders existed keep using the
+  loose tickets.
+
+goalship never commits a run folder. The orchestrating agent decides how run
+folders reach git.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).

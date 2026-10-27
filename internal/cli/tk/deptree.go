@@ -25,11 +25,11 @@ func newDepTreeCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&full, "full", false, "Disable dedup: print every occurrence of a ticket, once per path")
-	return cmd
+	return withRunIDFlag(cmd)
 }
 
 func runDepTree(cmd *cobra.Command, rootPattern string, full bool) error {
-	ticketsDir, err := findTicketsDir()
+	ticketsDir, err := findSelectedTicketsDir(cmd)
 	if err != nil {
 		return err
 	}

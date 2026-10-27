@@ -1,0 +1,215 @@
+package runfolder
+
+import (
+	"os"
+	"path/filepath"
+	"slices"
+	"testing"
+
+	"github.com/Christophe1997/goalship/internal/ledger"
+	"github.com/Christophe1997/goalship/internal/ticket"
+)
+
+func newRepo(t *testing.T) string {
+	t.Helper()
+	t.Setenv(ticket.TicketsDirEnv, "")
+	return t.TempDir()
+}
+
+func saveLedger(t *testing.T, repoRoot, runID string, ticketsDir *string) {
+	t.Helper()
+	if err := (&ledger.RunState{RunID: runID, TicketsDir: ticketsDir}).Save(repoRoot); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func makeRunFolder(t *testing.T, dir string) {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := ticket.WriteRunSummary(dir, ticket.RunSummary{RunID: filepath.Base(dir)}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func ptr(s string) *string { return &s }
+
+func TestRunDir_SanitizesLikeLedgerAndStaysInsideArea(t *testing.T) {
+	area := filepath.Join("/repo", ".tickets")
+	tests := []struct {
+		runID string
+		want  string
+	}{
+		{"abc123def456", filepath.Join(area, "abc123def456")},
+		{"../evil", filepath.Join(area, ".._evil")},
+		{"a/b", filepath.Join(area, "a_b")},
+	}
+	for _, tt := range tests {
+		got, err := RunDir(area, tt.runID)
+		if err != nil {
+			t.Fatalf("RunDir(%q): %v", tt.runID, err)
+		}
+		if got != tt.want {
+			t.Errorf("RunDir(%q) = %q, want %q", tt.runID, got, tt.want)
+		}
+	}
+}
+
+func TestRunDir_RefusesDotDotDotAndEmpty(t *testing.T) {
+	for _, runID := range []string{".", "..", ""} {
+		if got, err := RunDir("/repo/.tickets", runID); err == nil {
+			t.Errorf("RunDir(%q) = %q, want an error", runID, got)
+		}
+	}
+}
+
+func TestResolve_LedgerTicketsDir(t *testing.T) {
+	repo := newRepo(t)
+	saveLedger(t, repo, "r1", ptr(".tickets/r1"))
+
+	got, err := Resolve(repo, "r1", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(repo, ".tickets", "r1"); got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+func TestResolve_AE4_LegacyLedgerUsesTicketsArea(t *testing.T) {
+	repo := newRepo(t)
+	saveLedger(t, repo, "old", nil)
+
+	got, err := Resolve(repo, "old", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(repo, ".tickets"); got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+func TestResolve_AE2_TicketsDirEnvWins(t *testing.T) {
+	repo := newRepo(t)
+	saveLedger(t, repo, "r1", ptr(".tickets/r1"))
+	override := filepath.Join(t.TempDir(), "elsewhere")
+	t.Setenv(ticket.TicketsDirEnv, override)
+
+	for _, runID := range []string{"r1", "unknown"} {
+		got, err := Resolve(repo, runID, false)
+		if err != nil {
+			t.Fatalf("%s: %v", runID, err)
+		}
+		if got != override {
+			t.Fatalf("%s: got %q, want %q", runID, got, override)
+		}
+	}
+}
+
+func TestResolve_LedgerlessRunFolder(t *testing.T) {
+	repo := newRepo(t)
+	dir := filepath.Join(repo, ".tickets", "fresh")
+	makeRunFolder(t, dir)
+
+	got, err := Resolve(repo, "fresh", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != dir {
+		t.Fatalf("got %q, want %q", got, dir)
+	}
+
+	if _, err := Resolve(repo, "fresh", false); err == nil {
+		t.Fatal("ledger required: want error, got nil")
+	}
+}
+
+func TestResolve_UnknownRunRefusedWithoutCreatingFiles(t *testing.T) {
+	repo := newRepo(t)
+
+	for _, allow := range []bool{true, false} {
+		if _, err := Resolve(repo, "typo", allow); err == nil {
+			t.Fatalf("allowLedgerless=%v: want error, got nil", allow)
+		}
+	}
+	entries, err := os.ReadDir(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("repo should stay empty, has %v", entries)
+	}
+}
+
+func TestResolve_RefusesAliasingRunIDs(t *testing.T) {
+	repo := newRepo(t)
+	saveLedger(t, repo, "..", ptr(".tickets"))
+
+	for _, runID := range []string{"", ".", ".."} {
+		if _, err := Resolve(repo, runID, true); err == nil {
+			t.Fatalf("run id %q: want error, got nil", runID)
+		}
+	}
+}
+
+func TestResolve_TraversalRunIDStaysInsideArea(t *testing.T) {
+	repo := newRepo(t)
+	dir := filepath.Join(repo, ".tickets", ".._x")
+	makeRunFolder(t, dir)
+
+	got, err := Resolve(repo, "../x", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != dir {
+		t.Fatalf("got %q, want %q", got, dir)
+	}
+}
+
+func TestAll_AreaThenSortedRunFolders(t *testing.T) {
+	repo := newRepo(t)
+	area := filepath.Join(repo, ".tickets")
+	makeRunFolder(t, filepath.Join(area, "b"))
+	makeRunFolder(t, filepath.Join(area, "a"))
+	if err := os.MkdirAll(filepath.Join(area, "not-a-run"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := All(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{area, filepath.Join(area, "a"), filepath.Join(area, "b")}
+	if !slices.Equal(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+}
+
+func TestAll_TicketsDirEnv(t *testing.T) {
+	repo := newRepo(t)
+	makeRunFolder(t, filepath.Join(repo, ".tickets", "ignored"))
+	override := t.TempDir()
+	makeRunFolder(t, filepath.Join(override, "r1"))
+	t.Setenv(ticket.TicketsDirEnv, override)
+
+	got, err := All(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{override, filepath.Join(override, "r1")}
+	if !slices.Equal(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+}
+
+func TestResolve_RefusesRecordedTicketsDirOutsideArea(t *testing.T) {
+	for _, recorded := range []string{"../outside", "/abs/.tickets/r1", "src/r1", ".tickets/../src"} {
+		repo := newRepo(t)
+		saveLedger(t, repo, "r1", ptr(recorded))
+
+		if got, err := Resolve(repo, "r1", false); err == nil {
+			t.Errorf("tickets_dir %q: got %q, want an error", recorded, got)
+		}
+	}
+}

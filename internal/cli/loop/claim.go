@@ -42,6 +42,12 @@ func NewClaimCmd() *cobra.Command {
 			if !slices.Contains(state.ApprovedTicketIDs, ticketID) {
 				return fmt.Errorf("loop claim: run %q is approved but ticket %q is not in its approved_ticket_ids", runID, ticketID)
 			}
+			// Resolved before any branch work, so a failure here never
+			// leaves a created branch with no claim note.
+			ticketsDir, err := runTicketsDir("claim", repoRoot, runID)
+			if err != nil {
+				return err
+			}
 
 			exists, err := gitops.LocalBranchExists(repoRoot, branchName)
 			if err != nil {
@@ -83,7 +89,7 @@ func NewClaimCmd() *cobra.Command {
 				return fmt.Errorf("loop claim: %w", err)
 			}
 
-			if err := recordClaimNote(repoRoot, ticketID, branchName, baseRef, trunkBranch, claimSHA); err != nil {
+			if err := recordClaimNote(ticketsDir, ticketID, branchName, baseRef, trunkBranch, claimSHA); err != nil {
 				return fmt.Errorf("loop claim: %w", err)
 			}
 
@@ -98,14 +104,14 @@ func NewClaimCmd() *cobra.Command {
 // recordClaimNote mirrors reconciliation.py's record_claim_note -> tk_add_note:
 // a "branch: "/"base: "/"claim_sha: " line block, base omitted when baseRef
 // equals trunkBranch, appended to ticketID's notes.
-func recordClaimNote(repoRoot, ticketID, branchName, baseRef, trunkBranch, claimSHA string) error {
+func recordClaimNote(ticketsDir, ticketID, branchName, baseRef, trunkBranch, claimSHA string) error {
 	lines := []string{"branch: " + branchName}
 	if baseRef != trunkBranch {
 		lines = append(lines, "base: "+baseRef)
 	}
 	lines = append(lines, "claim_sha: "+claimSHA)
 
-	_, err := ticket.Update(ticket.ResolveTicketsDir(repoRoot), ticketID, func(t *ticket.Ticket) {
+	_, err := ticket.Update(ticketsDir, ticketID, func(t *ticket.Ticket) {
 		t.AddNote(strings.Join(lines, "\n"))
 	})
 	return err

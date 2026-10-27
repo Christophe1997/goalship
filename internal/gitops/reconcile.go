@@ -44,8 +44,8 @@ type ReconciliationReport struct {
 // recordOutcome saves a reconcile outcome's note and status change in one
 // write, so a crash between them cannot leave a closed ticket with no
 // explanation. An empty note or status leaves that part untouched.
-func recordOutcome(repoRoot, ticketID, note, status string) error {
-	_, err := ticket.Update(ticket.ResolveTicketsDir(repoRoot), ticketID, func(t *ticket.Ticket) {
+func recordOutcome(ticketsDir, ticketID, note, status string) error {
+	_, err := ticket.Update(ticketsDir, ticketID, func(t *ticket.Ticket) {
 		if note != "" {
 			t.AddNote(note)
 		}
@@ -64,8 +64,8 @@ func recordOutcome(repoRoot, ticketID, note, status string) error {
 // normally already closed by the time its own PR has merged, so limiting
 // this to in-progress tickets would make retarget_base_merged unreachable.
 // Mirrors reconciliation.py's find_ticket_by_branch.
-func findTicketByBranch(repoRoot, branch string) (ticketID string, fields map[string]string, found bool, err error) {
-	tickets, err := queryTickets(repoRoot, ".")
+func findTicketByBranch(ticketsDir, branch string) (ticketID string, fields map[string]string, found bool, err error) {
+	tickets, err := queryTickets(ticketsDir, ".")
 	if err != nil {
 		return "", nil, false, err
 	}
@@ -74,7 +74,7 @@ func findTicketByBranch(repoRoot, branch string) (ticketID string, fields map[st
 		if id == "" {
 			continue
 		}
-		f, err := noteFieldsForTicket(repoRoot, id)
+		f, err := noteFieldsForTicket(ticketsDir, id)
 		if err != nil {
 			return "", nil, false, err
 		}
@@ -92,8 +92,8 @@ func findTicketByBranch(repoRoot, branch string) (ticketID string, fields map[st
 // caller's ship-note-orphan check rather than becoming pr_state_unresolved,
 // which is reserved for a failed lookup on the ticket's OWN PR. Mirrors
 // reconciliation.py's _reconcile_stacked_base.
-func reconcileStackedBase(repoRoot, hostTool, ticketID, base, prRef string) (*ReconciliationAction, error) {
-	_, baseFields, found, err := findTicketByBranch(repoRoot, base)
+func reconcileStackedBase(repoRoot, ticketsDir, hostTool, ticketID, base, prRef string) (*ReconciliationAction, error) {
+	_, baseFields, found, err := findTicketByBranch(ticketsDir, base)
 	if err != nil {
 		return nil, err
 	}
@@ -108,7 +108,7 @@ func reconcileStackedBase(repoRoot, hostTool, ticketID, base, prRef string) (*Re
 		return &ReconciliationAction{TicketID: ticketID, Outcome: OutcomeRetargetBaseMerged, Detail: base, PRRef: prRef}, nil
 	case "closed":
 		note := fmt.Sprintf("Reconciliation: base %s closed without merging; blocked.", base)
-		if err := recordOutcome(repoRoot, ticketID, note, ""); err != nil {
+		if err := recordOutcome(ticketsDir, ticketID, note, ""); err != nil {
 			return nil, err
 		}
 		return &ReconciliationAction{TicketID: ticketID, Outcome: OutcomeBlockedStaleBase, Detail: base}, nil
@@ -117,12 +117,13 @@ func reconcileStackedBase(repoRoot, hostTool, ticketID, base, prRef string) (*Re
 	}
 }
 
-// Reconcile cross-checks every in-progress ticket against git/PR state
-// before the next `tk ready` pick. Always queries tk directly for the
-// in-progress set (not a run-state ledger) — no ledger dependency to fall
-// back from in the first place. Mirrors reconciliation.py's reconcile.
-func Reconcile(repoRoot string) (*ReconciliationReport, error) {
-	inProgress, err := queryTickets(repoRoot, `select(.status=="in_progress")`)
+// Reconcile cross-checks every in-progress ticket in ticketsDir against
+// git/PR state before the next `tk ready` pick. Always queries tk directly
+// for the in-progress set (not a run-state ledger) — no ledger dependency
+// to fall back from in the first place. Mirrors reconciliation.py's
+// reconcile.
+func Reconcile(repoRoot, ticketsDir string) (*ReconciliationReport, error) {
+	inProgress, err := queryTickets(ticketsDir, `select(.status=="in_progress")`)
 	if err != nil {
 		return nil, err
 	}
@@ -135,7 +136,7 @@ func Reconcile(repoRoot string) (*ReconciliationReport, error) {
 	needsHostLookup := false
 	for _, t := range inProgress {
 		id, _ := t["id"].(string)
-		fields, err := noteFieldsForTicket(repoRoot, id)
+		fields, err := noteFieldsForTicket(ticketsDir, id)
 		if err != nil {
 			return nil, err
 		}
@@ -184,20 +185,20 @@ func Reconcile(repoRoot string) (*ReconciliationReport, error) {
 		switch state {
 		case "merged":
 			note := fmt.Sprintf("Reconciliation: PR %s merged externally; closing.", prRef)
-			if err := recordOutcome(repoRoot, ticketID, note, "closed"); err != nil {
+			if err := recordOutcome(ticketsDir, ticketID, note, "closed"); err != nil {
 				return nil, err
 			}
 			actions = append(actions, ReconciliationAction{TicketID: ticketID, Outcome: OutcomeClosedMerged, Detail: prRef})
 		case "closed":
 			note := fmt.Sprintf("Reconciliation: PR %s closed without merging; left open.", prRef)
-			if err := recordOutcome(repoRoot, ticketID, note, "open"); err != nil {
+			if err := recordOutcome(ticketsDir, ticketID, note, "open"); err != nil {
 				return nil, err
 			}
 			actions = append(actions, ReconciliationAction{TicketID: ticketID, Outcome: OutcomeFailedClosedUnmerged, Detail: prRef})
 		case "open":
 			var action *ReconciliationAction
 			if base != "" {
-				action, err = reconcileStackedBase(repoRoot, hostTool, ticketID, base, prRef)
+				action, err = reconcileStackedBase(repoRoot, ticketsDir, hostTool, ticketID, base, prRef)
 				if err != nil {
 					return nil, err
 				}
@@ -210,7 +211,7 @@ func Reconcile(repoRoot string) (*ReconciliationReport, error) {
 				// already run, meaning a crash happened between
 				// record_ship_note and cmd_ship's follow-up tk_close —
 				// finish the close the crash interrupted.
-				if err := recordOutcome(repoRoot, ticketID, "", "closed"); err != nil {
+				if err := recordOutcome(ticketsDir, ticketID, "", "closed"); err != nil {
 					return nil, err
 				}
 				actions = append(actions, ReconciliationAction{TicketID: ticketID, Outcome: OutcomeClosedShipNoteOrphaned, Detail: branch, PRRef: prRef})

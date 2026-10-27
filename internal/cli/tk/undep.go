@@ -12,7 +12,7 @@ import (
 var undepUsageErr = errors.New("Usage: ticket undep <id> <dependency-id>")
 
 func NewUndepCmd() *cobra.Command {
-	return &cobra.Command{
+	return withRunIDFlag(&cobra.Command{
 		Use:   "undep <ticket-id> <dep-id>",
 		Short: "Remove a dependency between two tickets",
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -21,11 +21,11 @@ func NewUndepCmd() *cobra.Command {
 			}
 			return runUndep(cmd, args[0], args[1])
 		},
-	}
+	})
 }
 
 func runUndep(cmd *cobra.Command, rawID, rawDepID string) error {
-	ticketsDir, err := findTicketsDir()
+	ticketsDir, err := findSelectedTicketsDir(cmd)
 	if err != nil {
 		return err
 	}

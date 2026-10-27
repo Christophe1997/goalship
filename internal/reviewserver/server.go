@@ -21,7 +21,6 @@ import (
 	"time"
 
 	"github.com/Christophe1997/goalship/internal/ledger"
-	"github.com/Christophe1997/goalship/internal/ticket"
 )
 
 //go:embed assets
@@ -43,6 +42,9 @@ const shutdownTimeout = 5 * time.Second
 type Options struct {
 	RepoRoot string
 	RunID    string
+	// TicketsDir is the run's tickets folder; listing, editing and
+	// approving all read it alone, so other runs' tickets stay out (R4).
+	TicketsDir string
 
 	// Stdout receives the tokened URL announcement. Required — Run writes
 	// to it directly rather than os.Stdout, so callers (and tests) can
@@ -107,13 +109,11 @@ func Run(ctx context.Context, opts Options) error {
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	ticketsDir := ticket.ResolveTicketsDir(opts.RepoRoot)
-
 	broadcaster := newReviewUpdateBroadcaster()
 	state := &apiState{
 		repoRoot:    opts.RepoRoot,
 		runID:       opts.RunID,
-		ticketsDir:  ticketsDir,
+		ticketsDir:  opts.TicketsDir,
 		cancel:      cancel,
 		broadcaster: broadcaster,
 		done:        runCtx.Done(),

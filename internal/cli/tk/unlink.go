@@ -12,7 +12,7 @@ import (
 var unlinkUsageErr = errors.New("Usage: ticket unlink <id> <target-id>")
 
 func NewUnlinkCmd() *cobra.Command {
-	return &cobra.Command{
+	return withRunIDFlag(&cobra.Command{
 		Use:   "unlink <ticket-id> <target-id>",
 		Short: "Remove a link between two tickets",
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -21,11 +21,11 @@ func NewUnlinkCmd() *cobra.Command {
 			}
 			return runUnlink(cmd, args[0], args[1])
 		},
-	}
+	})
 }
 
 func runUnlink(cmd *cobra.Command, rawID, rawTargetID string) error {
-	ticketsDir, err := findTicketsDir()
+	ticketsDir, err := findSelectedTicketsDir(cmd)
 	if err != nil {
 		return err
 	}

@@ -5,15 +5,122 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/Christophe1997/goalship/internal/ticket"
 )
 
+func TestNewCreateCmd_RunIDWritesIntoRunFolder(t *testing.T) {
+	repo := newRunRepo(t)
+	runDir := startRun(t, repo, "A")
+	orig := gitUserName
+	defer func() { gitUserName = orig }()
+	gitUserName = func() string { return "" }
+
+	out, err := execCmd(t, NewCreateCmd(), []string{"--run-id", "A", "x"})
+	if err != nil {
+		t.Fatalf("create --run-id A: %v", err)
+	}
+	id := bytesTrimNewline([]byte(out))
+
+	idRe := regexp.MustCompile(`^[A-Za-z0-9]+-\d{8}-\d{4}-[a-z0-9]{4}$`)
+	if !idRe.MatchString(id) {
+		t.Fatalf("id = %q, want a new-shape ID with a non-hidden prefix", id)
+	}
+	area := filepath.Join(repo, ".tickets")
+	looseID, err := ticket.GenerateID(area, area)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := strings.SplitN(id, "-", 2)[0], strings.SplitN(looseID, "-", 2)[0]; got != want {
+		t.Errorf("prefix = %q, want the loose-ticket prefix %q", got, want)
+	}
+
+	got, err := os.ReadFile(filepath.Join(runDir, id+".md"))
+	if err != nil {
+		t.Fatalf("ticket not in run folder: %v", err)
+	}
+	wantPrefix := "---\nid: " + id + "\nstatus: open\ndeps: []\nlinks: []\ncreated: "
+	wantSuffix := "type: task\npriority: 2\n---\n# x\n\n"
+	if !bytes.HasPrefix(got, []byte(wantPrefix)) || !bytes.HasSuffix(got, []byte(wantSuffix)) {
+		t.Errorf("file = %q, want today's format (prefix %q, suffix %q)", got, wantPrefix, wantSuffix)
+	}
+	assertNotExist(t, filepath.Join(area, id+".md"))
+}
+
+func TestNewCreateCmd_RunIDCreatesFolderTheLedgerNames(t *testing.T) {
+	repo := newRunRepo(t)
+	saveRunLedger(t, repo, "A")
+
+	out, err := execCmd(t, NewCreateCmd(), []string{"--run-id", "A", "x"})
+	if err != nil {
+		t.Fatalf("create --run-id A: %v", err)
+	}
+	id := bytesTrimNewline([]byte(out))
+	if _, err := os.Stat(filepath.Join(repo, ".tickets", "A", id+".md")); err != nil {
+		t.Errorf("ticket not created in the ledger's folder: %v", err)
+	}
+}
+
+func TestNewCreateCmd_UnknownRunIDCreatesNothing(t *testing.T) {
+	repo := newRunRepo(t)
+
+	if _, err := execCmd(t, NewCreateCmd(), []string{"--run-id", "B", "x"}); err == nil || !strings.Contains(err.Error(), "unknown run") {
+		t.Fatalf("create --run-id B: err = %v, want an unknown-run refusal", err)
+	}
+	assertNotExist(t, filepath.Join(repo, ".goalship"))
+	entries, err := os.ReadDir(filepath.Join(repo, ".tickets"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Errorf(".tickets = %v, want empty", entries)
+	}
+}
+
+func assertCreateParentRefused(t *testing.T, dir string, args []string, where string) {
+	t.Helper()
+	orig := gitUserName
+	defer func() { gitUserName = orig }()
+	gitUserName = func() string { return "" }
+	before, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = execCmd(t, NewCreateCmd(), args)
+	if err == nil || !strings.Contains(err.Error(), where) {
+		t.Fatalf("%v: err = %v, want a refusal naming %q", args, err, where)
+	}
+	after, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(after) != len(before) {
+		t.Errorf("%s = %v after refusal, want unchanged %v", dir, after, before)
+	}
+}
+
+func TestNewCreateCmd_AE6_RefusesParentInAnotherRun(t *testing.T) {
+	f := newCrossRunFixture(t)
+	assertCreateParentRefused(t, f.runB, []string{"--run-id", "B", "--parent", f.a1, "child"}, "run A")
+}
+
+func TestNewCreateCmd_AE6_RefusesLooseParentFromRun(t *testing.T) {
+	f := newCrossRunFixture(t)
+	assertCreateParentRefused(t, f.runB, []string{"--run-id", "B", "--parent", f.l1, "child"}, "loose tickets")
+}
+
+func TestNewCreateCmd_RefusesRunParentFromLoose(t *testing.T) {
+	f := newCrossRunFixture(t)
+	assertCreateParentRefused(t, f.area, []string{"--parent", f.b1, "child"}, "run B")
+}
+
 func TestRunCreate_PopulatesAllRequiredFrontmatterFields(t *testing.T) {
 	dir := t.TempDir()
 
-	id, err := runCreate(dir, createOptions{title: "My Ticket", ticketType: "bug", priority: 1})
+	id, err := createLoose(dir, createOptions{title: "My Ticket", ticketType: "bug", priority: 1})
 	if err != nil {
 		t.Fatalf("runCreate: %v", err)
 	}
@@ -56,7 +163,7 @@ func TestRunCreate_PopulatesAllRequiredFrontmatterFields(t *testing.T) {
 func TestRunCreate_DefaultsTitleTypeAndPriority(t *testing.T) {
 	dir := t.TempDir()
 
-	id, err := runCreate(dir, createOptions{})
+	id, err := createLoose(dir, createOptions{})
 	if err != nil {
 		t.Fatalf("runCreate: %v", err)
 	}
@@ -72,7 +179,7 @@ func TestRunCreate_DefaultsTitleTypeAndPriority(t *testing.T) {
 func TestRunCreate_ExtraFieldsAndBodyLayout(t *testing.T) {
 	dir := t.TempDir()
 
-	id, err := runCreate(dir, createOptions{
+	id, err := createLoose(dir, createOptions{
 		title:       "T",
 		description: "the desc",
 		design:      "the design",
@@ -120,13 +227,13 @@ func TestRunCreate_ExtraFieldsAndBodyLayout(t *testing.T) {
 
 func TestRunCreate_ParentResolvesToFullIDViaSubstring(t *testing.T) {
 	dir := t.TempDir()
-	parentID, err := runCreate(dir, createOptions{title: "Parent"})
+	parentID, err := createLoose(dir, createOptions{title: "Parent"})
 	if err != nil {
 		t.Fatalf("runCreate parent: %v", err)
 	}
 	partial := parentID[len(parentID)-4:]
 
-	childID, err := runCreate(dir, createOptions{title: "Child", parent: partial})
+	childID, err := createLoose(dir, createOptions{title: "Child", parent: partial})
 	if err != nil {
 		t.Fatalf("runCreate child: %v", err)
 	}
@@ -143,7 +250,7 @@ func TestRunCreate_ParentResolvesToFullIDViaSubstring(t *testing.T) {
 func TestRunCreate_InvalidParentErrorsAndCreatesNoFile(t *testing.T) {
 	dir := t.TempDir()
 
-	_, err := runCreate(dir, createOptions{title: "Child", parent: "does-not-exist"})
+	_, err := createLoose(dir, createOptions{title: "Child", parent: "does-not-exist"})
 	if err == nil {
 		t.Fatal("runCreate: want error for unresolvable parent, got nil")
 	}
@@ -161,7 +268,7 @@ func TestRunCreate_CreatesTicketsDirIfMissing(t *testing.T) {
 	base := t.TempDir()
 	dir := filepath.Join(base, ".tickets")
 
-	if _, err := runCreate(dir, createOptions{title: "T"}); err != nil {
+	if _, err := createLoose(dir, createOptions{title: "T"}); err != nil {
 		t.Fatalf("runCreate: %v", err)
 	}
 	if info, err := os.Stat(dir); err != nil || !info.IsDir() {

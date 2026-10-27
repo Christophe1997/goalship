@@ -21,7 +21,7 @@ func NewClosedCmd() *cobra.Command {
 		Use:   "closed",
 		Short: "List recently closed tickets, most recently modified first",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ticketsDir, err := findTicketsDir()
+			ticketsDir, err := findSelectedTicketsDir(cmd)
 			if err != nil {
 				return err
 			}
@@ -67,5 +67,5 @@ func NewClosedCmd() *cobra.Command {
 	cmd.Flags().StringVarP(&assignee, "assignee", "a", "", "Filter by assignee")
 	cmd.Flags().StringVarP(&tag, "tag", "T", "", "Filter by tag")
 
-	return cmd
+	return withRunIDFlag(cmd)
 }

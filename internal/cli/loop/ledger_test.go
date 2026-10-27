@@ -9,6 +9,9 @@ import (
 	"testing"
 
 	"github.com/spf13/pflag"
+
+	"github.com/Christophe1997/goalship/internal/ledger"
+	"github.com/Christophe1997/goalship/internal/ticket"
 )
 
 type ledgerJSON struct {
@@ -21,6 +24,7 @@ type ledgerJSON struct {
 	TerminalState       *string  `json:"terminal_state"`
 	TrunkBranch         *string  `json:"trunk_branch"`
 	ReviewState         string   `json:"review_state"`
+	TicketsDir          *string  `json:"tickets_dir"`
 	CapsExceeded        *string  `json:"caps_exceeded"`
 }
 
@@ -182,6 +186,7 @@ func TestLedgerCmd_NoFlagCanSetReviewGateFields(t *testing.T) {
 		"review-state", "review_state", "reviewstate",
 		"approved-ticket-ids", "approved_ticket_ids", "approvedticketids",
 		"approved-tickets", "approve",
+		"tickets-dir", "tickets_dir", "ticketsdir",
 	} {
 		if flags.Lookup(name) != nil {
 			t.Errorf("cmd.Flags().Lookup(%q) is registered; no flag may set review_state or approved_ticket_ids", name)
@@ -213,5 +218,185 @@ func TestLedgerCmd_NoFlagCanSetReviewGateFields(t *testing.T) {
 		if !got[name] {
 			t.Errorf("expected flag %q not registered", name)
 		}
+	}
+}
+
+func readRunSummary(t *testing.T, repoRoot, runID string) *ticket.RunSummary {
+	t.Helper()
+	s, err := ticket.ReadRunSummary(filepath.Join(repoRoot, ".tickets", runID))
+	if err != nil {
+		t.Fatalf("read run.json: %v", err)
+	}
+	return s
+}
+
+func TestLedgerCmd_NewRunCreatesFolderAndSummary(t *testing.T) {
+	t.Setenv(ticket.TicketsDirEnv, "")
+	repoRoot := newLoopTestRepo(t)
+
+	got := decodeLedgerJSON(t, execCmd(t, NewLedgerCmd(), []string{repoRoot, "--goal", "G"}))
+
+	if got.TicketsDir == nil || *got.TicketsDir != ".tickets/"+got.RunID {
+		t.Fatalf("tickets_dir = %v, want .tickets/%s", got.TicketsDir, got.RunID)
+	}
+	summary := readRunSummary(t, repoRoot, got.RunID)
+	if summary.RunID != got.RunID || summary.Goal != "G" || summary.StartedAt == "" || summary.Outcome != nil {
+		t.Errorf("run.json = %+v, want run_id %s, goal G, a started_at, null outcome", summary, got.RunID)
+	}
+}
+
+func TestLedgerCmd_GoalChangeUpdatesSummaryKeepingStartedAt(t *testing.T) {
+	t.Setenv(ticket.TicketsDirEnv, "")
+	repoRoot := newLoopTestRepo(t)
+	execCmd(t, NewLedgerCmd(), []string{repoRoot, "--run-id", "r1", "--goal", "G"})
+	first := readRunSummary(t, repoRoot, "r1")
+
+	execCmd(t, NewLedgerCmd(), []string{repoRoot, "--run-id", "r1", "--goal", "G2"})
+
+	second := readRunSummary(t, repoRoot, "r1")
+	if second.Goal != "G2" || second.StartedAt != first.StartedAt {
+		t.Errorf("run.json after goal change = %+v, want goal G2 and started_at %s", second, first.StartedAt)
+	}
+}
+
+// Covers AE5.
+func TestLedgerCmd_TerminalRecordsOutcomeWithoutTouchingGit(t *testing.T) {
+	t.Setenv(ticket.TicketsDirEnv, "")
+	repoRoot := newLoopTestRepo(t)
+	execCmd(t, NewLedgerCmd(), []string{repoRoot, "--run-id", "r1", "--goal", "G"})
+	headBefore := runLoopGit(t, repoRoot, "rev-parse", "HEAD")
+	branchesBefore := runLoopGit(t, repoRoot, "branch", "--list")
+
+	execCmd(t, NewLedgerCmd(), []string{repoRoot, "--run-id", "r1", "--terminal", "exhausted"})
+
+	summary := readRunSummary(t, repoRoot, "r1")
+	if summary.Outcome == nil || *summary.Outcome != "exhausted" {
+		t.Errorf("outcome = %v, want exhausted", summary.Outcome)
+	}
+	if status := runLoopGit(t, repoRoot, "status", "--porcelain", "--untracked-files=all"); !strings.Contains(status, "?? .tickets/r1/run.json") {
+		t.Errorf("git status = %q, want run.json untracked", status)
+	}
+	if head := runLoopGit(t, repoRoot, "rev-parse", "HEAD"); head != headBefore {
+		t.Errorf("HEAD moved from %s to %s", headBefore, head)
+	}
+	if branches := runLoopGit(t, repoRoot, "branch", "--list"); branches != branchesBefore {
+		t.Errorf("branches changed from %q to %q", branchesBefore, branches)
+	}
+}
+
+// Covers AE4.
+func TestLedgerCmd_LegacyLedgerStaysLegacy(t *testing.T) {
+	t.Setenv(ticket.TicketsDirEnv, "")
+	repoRoot := newLoopTestRepo(t)
+	if err := os.MkdirAll(filepath.Join(repoRoot, ".goalship"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	legacy := `{"run_id": "old", "shipped_count": 0, "consecutive_failures": 0, "claimed_ticket_ids": [], "goal": "G", "ticket_mode": null, "terminal_state": null, "trunk_branch": null}`
+	if err := os.WriteFile(filepath.Join(repoRoot, ".goalship", "old.json"), []byte(legacy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got := decodeLedgerJSON(t, execCmd(t, NewLedgerCmd(), []string{repoRoot, "--run-id", "old", "--ship"}))
+
+	if got.TicketsDir != nil {
+		t.Errorf("tickets_dir = %q, want null for a legacy run", *got.TicketsDir)
+	}
+	if _, err := os.Stat(filepath.Join(repoRoot, ".tickets")); !os.IsNotExist(err) {
+		t.Errorf(".tickets exists (err %v), want no folder for a legacy run", err)
+	}
+}
+
+func TestLedgerCmd_TicketsDirOverrideMeansNoRunFolder(t *testing.T) {
+	repoRoot := newLoopTestRepo(t)
+	t.Setenv(ticket.TicketsDirEnv, filepath.Join(t.TempDir(), "custom"))
+
+	got := decodeLedgerJSON(t, execCmd(t, NewLedgerCmd(), []string{repoRoot, "--run-id", "r1"}))
+
+	if got.TicketsDir != nil {
+		t.Errorf("tickets_dir = %q, want null under TICKETS_DIR", *got.TicketsDir)
+	}
+	if _, err := os.Stat(filepath.Join(repoRoot, ".tickets")); !os.IsNotExist(err) {
+		t.Errorf(".tickets exists (err %v), want none under TICKETS_DIR", err)
+	}
+}
+
+func TestLedgerCmd_RecreatedLedgerKeepsRunSummary(t *testing.T) {
+	t.Setenv(ticket.TicketsDirEnv, "")
+	repoRoot := newLoopTestRepo(t)
+	execCmd(t, NewLedgerCmd(), []string{repoRoot, "--run-id", "r1", "--goal", "G", "--terminal", "exhausted"})
+	if err := os.Remove(filepath.Join(repoRoot, ".goalship", "r1.json")); err != nil {
+		t.Fatal(err)
+	}
+
+	got := decodeLedgerJSON(t, execCmd(t, NewLedgerCmd(), []string{repoRoot, "--run-id", "r1"}))
+
+	summary := readRunSummary(t, repoRoot, "r1")
+	if summary.Goal != "G" || summary.Outcome == nil || *summary.Outcome != "exhausted" {
+		t.Errorf("run.json after ledger recreation = %+v, want goal G and outcome exhausted kept", summary)
+	}
+	if got.Goal != "G" || got.TerminalState == nil || *got.TerminalState != "exhausted" {
+		t.Errorf("recreated ledger = goal %q terminal %v, want them seeded from run.json", got.Goal, got.TerminalState)
+	}
+}
+
+func execLedgerErr(t *testing.T, args []string) error {
+	t.Helper()
+	cmd := NewLedgerCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs(args)
+	return cmd.Execute()
+}
+
+func TestLedgerCmd_RefusesRecordedTicketsDirOutsideArea(t *testing.T) {
+	t.Setenv(ticket.TicketsDirEnv, "")
+	repoRoot := newLoopTestRepo(t)
+	escape := "../escape"
+	if err := (&ledger.RunState{RunID: "r1", TicketsDir: &escape}).Save(repoRoot); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := execLedgerErr(t, []string{repoRoot, "--run-id", "r1", "--ship"}); err == nil {
+		t.Fatal("want an error for a tickets_dir outside the tickets area")
+	}
+	if _, err := os.Stat(filepath.Join(filepath.Dir(repoRoot), "escape")); !os.IsNotExist(err) {
+		t.Errorf("folder outside the repo exists (err %v), want none created", err)
+	}
+}
+
+func TestLedgerCmd_RecordedFolderKeptUnderTicketsDirOverride(t *testing.T) {
+	t.Setenv(ticket.TicketsDirEnv, "")
+	repoRoot := newLoopTestRepo(t)
+	execCmd(t, NewLedgerCmd(), []string{repoRoot, "--run-id", "r1", "--goal", "G"})
+	t.Setenv(ticket.TicketsDirEnv, filepath.Join(t.TempDir(), "custom"))
+
+	execCmd(t, NewLedgerCmd(), []string{repoRoot, "--run-id", "r1", "--goal", "G2"})
+
+	if summary := readRunSummary(t, repoRoot, "r1"); summary.Goal != "G2" {
+		t.Errorf("run.json goal = %q, want G2", summary.Goal)
+	}
+}
+
+func TestLedgerCmd_RunSummaryFailureLeavesLedgerUnchanged(t *testing.T) {
+	t.Setenv(ticket.TicketsDirEnv, "")
+	repoRoot := newLoopTestRepo(t)
+	execCmd(t, NewLedgerCmd(), []string{repoRoot, "--run-id", "r1"})
+	summaryPath := filepath.Join(repoRoot, ".tickets", "r1", ticket.RunSummaryFile)
+	if err := os.Remove(summaryPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(summaryPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := execLedgerErr(t, []string{repoRoot, "--run-id", "r1", "--ship"}); err == nil {
+		t.Fatal("want an error when run.json cannot be written")
+	}
+	state, err := ledger.LoadRunState(repoRoot, "r1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.ShippedCount != 0 {
+		t.Errorf("shipped_count = %d, want 0: a failed command must not persist its mutation", state.ShippedCount)
 	}
 }

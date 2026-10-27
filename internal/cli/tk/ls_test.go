@@ -2,14 +2,109 @@ package tk
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/Christophe1997/goalship/internal/ticket"
+	"github.com/Christophe1997/goalship/internal/ticket/tickettest"
 )
+
+func TestNewLsCmd_AE3_AllGroupsTicketsByRun(t *testing.T) {
+	repo := newRunRepo(t)
+	loose := tickettest.Create(t, repo, "Loose")
+	var want strings.Builder
+	want.WriteString(loose + " [open] - Loose\n")
+	for _, run := range []struct{ id, goal, heading string }{
+		{"A", "Goal A", "== A: Goal A"},
+		{"B", "Goal B", "== B: Goal B"},
+		{"C", "", "== C"},
+	} {
+		dir := startRun(t, repo, run.id)
+		if err := ticket.WriteRunSummary(dir, ticket.RunSummary{RunID: run.id, Goal: run.goal}); err != nil {
+			t.Fatal(err)
+		}
+		id := tickettest.CreateInRun(t, repo, run.id, "In "+run.id)
+		want.WriteString(run.heading + "\n" + id + " [open] - In " + run.id + "\n")
+	}
+
+	out, err := execCmd(t, NewLsCmd(), []string{"--all"})
+	if err != nil {
+		t.Fatalf("ls --all: %v", err)
+	}
+	if out != want.String() {
+		t.Errorf("ls --all =\n%s\nwant\n%s", out, want.String())
+	}
+
+	out, err = execCmd(t, NewLsCmd(), nil)
+	if err != nil {
+		t.Fatalf("ls: %v", err)
+	}
+	if want := loose + " [open] - Loose\n"; out != want {
+		t.Errorf("ls = %q, want only the loose tickets %q", out, want)
+	}
+}
+
+func TestNewLsCmd_RunIDSeparatesRunFromLooseTickets(t *testing.T) {
+	repo := newRunRepo(t)
+	startRun(t, repo, "A")
+	runTicket := tickettest.CreateInRun(t, repo, "A", "In run A")
+	looseTicket := tickettest.Create(t, repo, "Loose")
+
+	out, err := execCmd(t, NewLsCmd(), []string{"--run-id", "A"})
+	if err != nil {
+		t.Fatalf("ls --run-id A: %v", err)
+	}
+	if want := runTicket + " [open] - In run A\n"; out != want {
+		t.Errorf("ls --run-id A = %q, want %q", out, want)
+	}
+
+	out, err = execCmd(t, NewLsCmd(), nil)
+	if err != nil {
+		t.Fatalf("ls: %v", err)
+	}
+	if want := looseTicket + " [open] - Loose\n"; out != want {
+		t.Errorf("ls = %q, want %q", out, want)
+	}
+}
+
+func TestNewLsCmd_RunIDLedgerlessRunFolder(t *testing.T) {
+	repo := newRunRepo(t)
+	dir := filepath.Join(repo, ".tickets", "B")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := ticket.WriteRunSummary(dir, ticket.RunSummary{RunID: "B"}); err != nil {
+		t.Fatal(err)
+	}
+	id := tickettest.CreateInRun(t, repo, "B", "Cloned")
+
+	out, err := execCmd(t, NewLsCmd(), []string{"--run-id", "B"})
+	if err != nil {
+		t.Fatalf("ls --run-id B: %v", err)
+	}
+	if want := id + " [open] - Cloned\n"; out != want {
+		t.Errorf("ls --run-id B = %q, want %q", out, want)
+	}
+	assertNotExist(t, filepath.Join(repo, ".goalship"))
+}
+
+func TestNewLsCmd_UnknownRunIDFailsAndCreatesNothing(t *testing.T) {
+	repo := newRunRepo(t)
+
+	if _, err := execCmd(t, NewLsCmd(), []string{"--run-id", "B"}); err == nil || !strings.Contains(err.Error(), "unknown run") {
+		t.Fatalf("ls --run-id B: err = %v, want an unknown-run refusal", err)
+	}
+	assertNotExist(t, filepath.Join(repo, ".tickets", "B"))
+	assertNotExist(t, filepath.Join(repo, ".goalship"))
+}
 
 func TestNewLsCmd_ListsAllByDefaultInFilenameOrder(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("TICKETS_DIR", dir)
-	idA, _ := runCreate(dir, createOptions{title: "Alpha", ticketType: "task", priority: 2})
-	idB, _ := runCreate(dir, createOptions{title: "Beta", ticketType: "task", priority: 2})
+	idA, _ := createLoose(dir, createOptions{title: "Alpha", ticketType: "task", priority: 2})
+	idB, _ := createLoose(dir, createOptions{title: "Beta", ticketType: "task", priority: 2})
 
 	cmd := NewLsCmd()
 	var out bytes.Buffer
@@ -31,8 +126,8 @@ func TestNewLsCmd_ListsAllByDefaultInFilenameOrder(t *testing.T) {
 func TestNewLsCmd_DepsSuffixFormat(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("TICKETS_DIR", dir)
-	depID, _ := runCreate(dir, createOptions{title: "Dep", ticketType: "task", priority: 2})
-	id, err := runCreate(dir, createOptions{title: "Main", ticketType: "task", priority: 2})
+	depID, _ := createLoose(dir, createOptions{title: "Dep", ticketType: "task", priority: 2})
+	id, err := createLoose(dir, createOptions{title: "Main", ticketType: "task", priority: 2})
 	if err != nil {
 		t.Fatalf("runCreate: %v", err)
 	}
@@ -56,8 +151,8 @@ func TestNewLsCmd_DepsSuffixFormat(t *testing.T) {
 func TestNewLsCmd_StatusFilter(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("TICKETS_DIR", dir)
-	openID, _ := runCreate(dir, createOptions{title: "Open one", ticketType: "task", priority: 2})
-	closedID, _ := runCreate(dir, createOptions{title: "Closed one", ticketType: "task", priority: 2})
+	openID, _ := createLoose(dir, createOptions{title: "Open one", ticketType: "task", priority: 2})
+	closedID, _ := createLoose(dir, createOptions{title: "Closed one", ticketType: "task", priority: 2})
 	if _, err := runStatus(dir, closedID, "closed"); err != nil {
 		t.Fatal(err)
 	}
@@ -82,11 +177,11 @@ func TestNewLsCmd_TagFilterUsesCapitalTFlag(t *testing.T) {
 	// filter (confirmed by reading cmd_ls's arg parsing directly).
 	dir := t.TempDir()
 	t.Setenv("TICKETS_DIR", dir)
-	uiID, err := runCreate(dir, createOptions{title: "UI ticket", ticketType: "task", priority: 2, tags: "ui,frontend"})
+	uiID, err := createLoose(dir, createOptions{title: "UI ticket", ticketType: "task", priority: 2, tags: "ui,frontend"})
 	if err != nil {
 		t.Fatalf("runCreate: %v", err)
 	}
-	otherID, err := runCreate(dir, createOptions{title: "Other ticket", ticketType: "task", priority: 2, tags: "backend"})
+	otherID, err := createLoose(dir, createOptions{title: "Other ticket", ticketType: "task", priority: 2, tags: "backend"})
 	if err != nil {
 		t.Fatalf("runCreate: %v", err)
 	}
@@ -109,11 +204,11 @@ func TestNewLsCmd_TagFilterUsesCapitalTFlag(t *testing.T) {
 func TestNewLsCmd_AssigneeFilter(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("TICKETS_DIR", dir)
-	aliceID, err := runCreate(dir, createOptions{title: "A", ticketType: "task", priority: 2, assignee: "alice"})
+	aliceID, err := createLoose(dir, createOptions{title: "A", ticketType: "task", priority: 2, assignee: "alice"})
 	if err != nil {
 		t.Fatalf("runCreate: %v", err)
 	}
-	bobID, err := runCreate(dir, createOptions{title: "B", ticketType: "task", priority: 2, assignee: "bob"})
+	bobID, err := createLoose(dir, createOptions{title: "B", ticketType: "task", priority: 2, assignee: "bob"})
 	if err != nil {
 		t.Fatalf("runCreate: %v", err)
 	}
@@ -177,7 +272,7 @@ func TestNewLsCmd_UnparseableTicketSkippedWithWarningNamingFile(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("TICKETS_DIR", dir)
 	writeRawTicket(t, dir, "not-a-ticket.md", "just some text, no frontmatter at all\n")
-	goodID, err := runCreate(dir, createOptions{title: "Good", ticketType: "task", priority: 2})
+	goodID, err := createLoose(dir, createOptions{title: "Good", ticketType: "task", priority: 2})
 	if err != nil {
 		t.Fatalf("runCreate: %v", err)
 	}

@@ -35,20 +35,20 @@ func NewDepCmd() *cobra.Command {
 		},
 	}
 	cmd.AddCommand(newDepTreeCmd(), newDepCycleCmd())
-	return cmd
+	return withRunIDFlag(cmd)
 }
 
 func runDep(cmd *cobra.Command, rawID, rawDepID string) error {
-	ticketsDir, err := findTicketsDir()
+	loc, err := selectTickets(cmd, false)
 	if err != nil {
 		return err
 	}
 
-	path, err := resolveOrBashErr(ticketsDir, rawID)
+	path, err := resolveOrBashErr(loc.dir, rawID)
 	if err != nil {
 		return err
 	}
-	depPath, err := resolveOrBashErr(ticketsDir, rawDepID)
+	depPath, err := resolveInFolder(loc, rawDepID)
 	if err != nil {
 		return err
 	}

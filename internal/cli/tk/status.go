@@ -36,16 +36,16 @@ func reportStatusChange(cmd *cobra.Command, ticketsDir, id, status string) error
 }
 
 func NewStatusCmd() *cobra.Command {
-	return &cobra.Command{
+	return withRunIDFlag(&cobra.Command{
 		Use:   "status <ticket-id> <status>",
 		Short: "Update a ticket's status (open|in_progress|closed)",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ticketsDir, err := findTicketsDir()
+			ticketsDir, err := findSelectedTicketsDir(cmd)
 			if err != nil {
 				return err
 			}
 			return reportStatusChange(cmd, ticketsDir, args[0], args[1])
 		},
-	}
+	})
 }

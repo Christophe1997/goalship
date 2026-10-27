@@ -118,3 +118,41 @@ func TestCreate_HonorsTicketsDirEnvAndCreatesMissingDirectory(t *testing.T) {
 		t.Errorf("repoRoot/.tickets exists (err=%v), want the override used instead", err)
 	}
 }
+
+func TestCreateInRun_WritesNonHiddenTicketIntoRunFolder(t *testing.T) {
+	t.Setenv(ticket.TicketsDirEnv, "")
+	repoRoot := filepath.Join(t.TempDir(), "goalship")
+
+	id := CreateInRun(t, repoRoot, "r1", "Run work")
+
+	runDir := filepath.Join(repoRoot, ".tickets", "r1")
+	if strings.HasPrefix(id, ".") || !strings.HasPrefix(id, "goa-") {
+		t.Errorf("id = %q, want a goa- prefix", id)
+	}
+	if _, err := ticket.Load(filepath.Join(runDir, id+".md")); err != nil {
+		t.Errorf("ticket not in run folder: %v", err)
+	}
+	if entries, _ := os.ReadDir(filepath.Join(repoRoot, ".tickets")); len(entries) != 1 {
+		t.Errorf(".tickets has %d entries, want only the run folder", len(entries))
+	}
+}
+
+func TestInHelpers_MutateTicketsInsideGivenFolder(t *testing.T) {
+	t.Setenv(ticket.TicketsDirEnv, "")
+	repoRoot := t.TempDir()
+	runDir := filepath.Join(repoRoot, ".tickets", "r1")
+	a := CreateInRun(t, repoRoot, "r1", "A")
+	b := CreateInRun(t, repoRoot, "r1", "B")
+
+	SetStatusIn(t, runDir, a, "in_progress")
+	AddNoteIn(t, runDir, a, "branch: x")
+	DepIn(t, runDir, a, b)
+
+	loaded, err := ticket.Load(filepath.Join(runDir, a+".md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Status != "in_progress" || !strings.Contains(loaded.Body, "branch: x") || len(loaded.Deps) != 1 || loaded.Deps[0] != b {
+		t.Errorf("ticket = status %q deps %v body %q, want in_progress, dep %s, note", loaded.Status, loaded.Deps, loaded.Body, b)
+	}
+}

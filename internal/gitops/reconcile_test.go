@@ -46,7 +46,7 @@ func pathWithoutHostTools(t *testing.T) string {
 
 func ticketStatus(t *testing.T, repoRoot, ticketID string) string {
 	t.Helper()
-	matches, err := queryTickets(repoRoot, fmt.Sprintf(`select(.id=="%s")`, ticketID))
+	matches, err := queryTickets(ticketsDir(repoRoot), fmt.Sprintf(`select(.id=="%s")`, ticketID))
 	if err != nil {
 		t.Fatalf("queryTickets: %v", err)
 	}
@@ -59,7 +59,7 @@ func ticketStatus(t *testing.T, repoRoot, ticketID string) string {
 
 func requireNote(t *testing.T, repoRoot, ticketID, want string) {
 	t.Helper()
-	notes, err := readNotes(repoRoot, ticketID)
+	notes, err := readNotes(ticketsDir(repoRoot), ticketID)
 	if err != nil {
 		t.Fatalf("readNotes: %v", err)
 	}
@@ -75,7 +75,7 @@ func TestReconcile_ClosedMerged(t *testing.T) {
 	tkAddNote(t, repoRoot, ticketID, "branch: feat/x\npr: PR1")
 	fakeGH(t, 0, map[string]string{"PR1": "MERGED"})
 
-	report, err := Reconcile(repoRoot)
+	report, err := Reconcile(repoRoot, ticketsDir(repoRoot))
 	if err != nil {
 		t.Fatalf("Reconcile: %v", err)
 	}
@@ -102,7 +102,7 @@ func TestReconcile_FailedClosedUnmerged(t *testing.T) {
 	tkAddNote(t, repoRoot, ticketID, "branch: feat/x\npr: PR1")
 	fakeGH(t, 0, map[string]string{"PR1": "CLOSED"})
 
-	report, err := Reconcile(repoRoot)
+	report, err := Reconcile(repoRoot, ticketsDir(repoRoot))
 	if err != nil {
 		t.Fatalf("Reconcile: %v", err)
 	}
@@ -126,7 +126,7 @@ func TestReconcile_NoRecoverableState_SkipsHostLookup(t *testing.T) {
 
 	t.Setenv("PATH", pathWithoutHostTools(t))
 
-	report, err := Reconcile(repoRoot)
+	report, err := Reconcile(repoRoot, ticketsDir(repoRoot))
 	if err != nil {
 		t.Fatalf("Reconcile: %v", err)
 	}
@@ -149,7 +149,7 @@ func TestReconcile_RetryPRCreation(t *testing.T) {
 	tkAddNote(t, repoRoot, ticketID, "branch: feat/x")
 	fakeGH(t, 0, nil)
 
-	report, err := Reconcile(repoRoot)
+	report, err := Reconcile(repoRoot, ticketsDir(repoRoot))
 	if err != nil {
 		t.Fatalf("Reconcile: %v", err)
 	}
@@ -173,7 +173,7 @@ func TestReconcile_BranchOnlyTicket_SkipsHostLookup(t *testing.T) {
 
 	t.Setenv("PATH", pathWithoutHostTools(t))
 
-	report, err := Reconcile(repoRoot)
+	report, err := Reconcile(repoRoot, ticketsDir(repoRoot))
 	if err != nil {
 		t.Fatalf("Reconcile: %v", err)
 	}
@@ -198,7 +198,7 @@ func TestReconcile_RetargetBaseMerged(t *testing.T) {
 
 	fakeGH(t, 0, map[string]string{"PR1": "OPEN", "PRBASE": "MERGED"})
 
-	report, err := Reconcile(repoRoot)
+	report, err := Reconcile(repoRoot, ticketsDir(repoRoot))
 	if err != nil {
 		t.Fatalf("Reconcile: %v", err)
 	}
@@ -226,7 +226,7 @@ func TestReconcile_BlockedStaleBase(t *testing.T) {
 
 	fakeGH(t, 0, map[string]string{"PR1": "OPEN", "PRBASE": "CLOSED"})
 
-	report, err := Reconcile(repoRoot)
+	report, err := Reconcile(repoRoot, ticketsDir(repoRoot))
 	if err != nil {
 		t.Fatalf("Reconcile: %v", err)
 	}
@@ -251,7 +251,7 @@ func TestReconcile_ClosedShipNoteOrphaned(t *testing.T) {
 	tkAddNote(t, repoRoot, ticketID, "branch: feat/y\npr: PR1\nsha: deadbeef")
 	fakeGH(t, 0, map[string]string{"PR1": "OPEN"})
 
-	report, err := Reconcile(repoRoot)
+	report, err := Reconcile(repoRoot, ticketsDir(repoRoot))
 	if err != nil {
 		t.Fatalf("Reconcile: %v", err)
 	}
@@ -274,7 +274,7 @@ func TestReconcile_PRStateUnresolved(t *testing.T) {
 	tkAddNote(t, repoRoot, ticketID, "branch: feat/x\npr: PR1")
 	fakeGH(t, 0, nil) // auth succeeds, but PR1 is unrecognized -> lookup fails
 
-	report, err := Reconcile(repoRoot)
+	report, err := Reconcile(repoRoot, ticketsDir(repoRoot))
 	if err != nil {
 		t.Fatalf("Reconcile: %v", err)
 	}
@@ -298,7 +298,7 @@ func TestReconcile_HealthyOpenPR_NoAction(t *testing.T) {
 	tkAddNote(t, repoRoot, ticketID, "branch: feat/x\npr: PR1")
 	fakeGH(t, 0, map[string]string{"PR1": "OPEN"})
 
-	report, err := Reconcile(repoRoot)
+	report, err := Reconcile(repoRoot, ticketsDir(repoRoot))
 	if err != nil {
 		t.Fatalf("Reconcile: %v", err)
 	}
@@ -324,7 +324,7 @@ func TestReconcile_StackedBaseMerged_WinsOverShipNoteOrphan(t *testing.T) {
 
 	fakeGH(t, 0, map[string]string{"PR1": "OPEN", "PRBASE": "MERGED"})
 
-	report, err := Reconcile(repoRoot)
+	report, err := Reconcile(repoRoot, ticketsDir(repoRoot))
 	if err != nil {
 		t.Fatalf("Reconcile: %v", err)
 	}
@@ -344,7 +344,7 @@ func TestReconcile_AuthFailure_NoHostToolOnPath(t *testing.T) {
 
 	t.Setenv("PATH", pathWithoutHostTools(t))
 
-	report, err := Reconcile(repoRoot)
+	report, err := Reconcile(repoRoot, ticketsDir(repoRoot))
 	if err != nil {
 		t.Fatalf("Reconcile: %v", err)
 	}
@@ -367,7 +367,7 @@ func TestReconcile_AuthFailure_BadCredential_ResurfacesEveryCall(t *testing.T) {
 	fakeGH(t, 1, nil) // `gh auth status` fails every time
 
 	for i := 0; i < 2; i++ {
-		report, err := Reconcile(repoRoot)
+		report, err := Reconcile(repoRoot, ticketsDir(repoRoot))
 		if err != nil {
 			t.Fatalf("Reconcile call %d: %v", i, err)
 		}
@@ -389,7 +389,7 @@ func TestReconcile_WritesLandInTicketsDirOverride(t *testing.T) {
 	tkAddNote(t, repoRoot, ticketID, "branch: feat/x\npr: PR1")
 	fakeGH(t, 0, map[string]string{"PR1": "MERGED"})
 
-	if _, err := Reconcile(repoRoot); err != nil {
+	if _, err := Reconcile(repoRoot, ticketsDir(repoRoot)); err != nil {
 		t.Fatalf("Reconcile: %v", err)
 	}
 
@@ -412,7 +412,7 @@ func TestReconcile_NoteCarriesUTCTimestampMarker(t *testing.T) {
 	tkAddNote(t, repoRoot, ticketID, "branch: feat/x\npr: PR1")
 	fakeGH(t, 0, map[string]string{"PR1": "MERGED"})
 
-	if _, err := Reconcile(repoRoot); err != nil {
+	if _, err := Reconcile(repoRoot, ticketsDir(repoRoot)); err != nil {
 		t.Fatalf("Reconcile: %v", err)
 	}
 
@@ -436,7 +436,7 @@ func TestReconcile_MalformedTicketWriteFails_LeavesFileUnchanged(t *testing.T) {
 	}
 	fakeGH(t, 0, map[string]string{"PR9": "MERGED"})
 
-	_, err = Reconcile(repoRoot)
+	_, err = Reconcile(repoRoot, ticketsDir(repoRoot))
 	if err == nil {
 		t.Fatal("Reconcile: want an error when the ticket to close cannot be loaded, got nil")
 	}

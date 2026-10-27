@@ -8,6 +8,9 @@ import (
 
 	"github.com/Christophe1997/goalship/internal/gitops"
 	"github.com/Christophe1997/goalship/internal/ledger"
+	"github.com/Christophe1997/goalship/internal/runfolder"
+	"github.com/Christophe1997/goalship/internal/ticket"
+	"github.com/Christophe1997/goalship/internal/ticket/tickettest"
 )
 
 // claimTestSetup creates a repo with one ticket and returns the repo root
@@ -24,6 +27,48 @@ func saveRunState(t *testing.T, repoRoot string, state *ledger.RunState) {
 	if err := state.Save(repoRoot); err != nil {
 		t.Fatalf("save run state: %v", err)
 	}
+}
+
+// saveRunWithFolder saves state as a run-folder run, the way `loop ledger`
+// creates one: tickets_dir recorded in the ledger and the folder holding
+// run.json. It returns the folder.
+func saveRunWithFolder(t *testing.T, repoRoot string, state *ledger.RunState) string {
+	t.Helper()
+	dir, err := runfolder.RunDir(ticket.ResolveTicketsDir(repoRoot), state.RunID)
+	if err != nil {
+		t.Fatalf("run dir: %v", err)
+	}
+	rel, err := filepath.Rel(repoRoot, dir)
+	if err != nil {
+		t.Fatalf("rel run dir: %v", err)
+	}
+	rel = filepath.ToSlash(rel)
+	state.TicketsDir = &rel
+	saveRunState(t, repoRoot, state)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir run dir: %v", err)
+	}
+	if err := ticket.WriteRunSummary(dir, ticket.RunSummary{RunID: state.RunID}); err != nil {
+		t.Fatalf("write run summary: %v", err)
+	}
+	return dir
+}
+
+func newRun(t *testing.T, repoRoot, runID string) string {
+	t.Helper()
+	return saveRunWithFolder(t, repoRoot, &ledger.RunState{RunID: runID})
+}
+
+// newLegacyRun saves a ledger with no tickets_dir, so the run keeps using
+// loose tickets (R14).
+func newLegacyRun(t *testing.T, repoRoot, runID string) {
+	t.Helper()
+	saveRunState(t, repoRoot, &ledger.RunState{RunID: runID})
+}
+
+func tkCreateInRun(t *testing.T, repoRoot, runID, title string) string {
+	t.Helper()
+	return tickettest.CreateInRun(t, repoRoot, runID, title)
 }
 
 func execClaimExpectError(t *testing.T, args []string) error {
@@ -303,6 +348,29 @@ func TestClaimCmd_HonorsTicketsDirEnvOverride(t *testing.T) {
 	}
 	if !strings.Contains(string(data), "branch: feat/x") {
 		t.Errorf("claim note not written into TICKETS_DIR override location:\n%s", data)
+	}
+}
+
+func TestClaimCmd_RunFolder_WritesNoteThereAndLeavesLooseTicketAlone(t *testing.T) {
+	repoRoot := newLoopTestRepo(t)
+	ticketID := tkCreateInRun(t, repoRoot, "run-a", "Same title")
+	looseID := tkCreate(t, repoRoot, "Same title")
+	runDir := saveRunWithFolder(t, repoRoot, &ledger.RunState{
+		RunID: "run-a", ReviewState: ledger.ReviewStateApproved,
+		ApprovedTicketIDs: []string{ticketID},
+	})
+
+	execCmd(t, NewClaimCmd(), []string{repoRoot, ticketID, "feat/x", "main", "main", "--run-id", "run-a"})
+
+	data, err := os.ReadFile(filepath.Join(runDir, ticketID+".md"))
+	if err != nil {
+		t.Fatalf("read run-folder ticket: %v", err)
+	}
+	if !strings.Contains(string(data), "branch: feat/x") {
+		t.Errorf("claim note not written into the run folder:\n%s", data)
+	}
+	if strings.Contains(ticketBody(t, repoRoot, looseID), "branch:") {
+		t.Error("claim note leaked into the same-titled loose ticket")
 	}
 }
 

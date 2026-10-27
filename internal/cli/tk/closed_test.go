@@ -11,19 +11,19 @@ import (
 func TestNewClosedCmd_ListsClosedAndDone(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("TICKETS_DIR", dir)
-	closedID, err := runCreate(dir, createOptions{title: "Closed", ticketType: "task", priority: 2})
+	closedID, err := createLoose(dir, createOptions{title: "Closed", ticketType: "task", priority: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := runStatus(dir, closedID, "closed"); err != nil {
 		t.Fatal(err)
 	}
-	doneID, err := runCreate(dir, createOptions{title: "Done", ticketType: "task", priority: 2})
+	doneID, err := createLoose(dir, createOptions{title: "Done", ticketType: "task", priority: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
 	setStatusDirect(t, dir, doneID, "done")
-	openID, err := runCreate(dir, createOptions{title: "Open", ticketType: "task", priority: 2})
+	openID, err := createLoose(dir, createOptions{title: "Open", ticketType: "task", priority: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,7 +49,7 @@ func TestNewClosedCmd_ListsClosedAndDone(t *testing.T) {
 func TestNewClosedCmd_MostRecentlyModifiedFirst(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("TICKETS_DIR", dir)
-	oldID, err := runCreate(dir, createOptions{title: "Old", ticketType: "task", priority: 2})
+	oldID, err := createLoose(dir, createOptions{title: "Old", ticketType: "task", priority: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +58,7 @@ func TestNewClosedCmd_MostRecentlyModifiedFirst(t *testing.T) {
 	}
 	touchOlder(t, dir, oldID, 2*time.Hour)
 
-	newID, err := runCreate(dir, createOptions{title: "New", ticketType: "task", priority: 2})
+	newID, err := createLoose(dir, createOptions{title: "New", ticketType: "task", priority: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +83,7 @@ func TestNewClosedCmd_LimitCapsOutput(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("TICKETS_DIR", dir)
 	for i := 0; i < 5; i++ {
-		id, err := runCreate(dir, createOptions{title: "T", ticketType: "task", priority: 2})
+		id, err := createLoose(dir, createOptions{title: "T", ticketType: "task", priority: 2})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -109,7 +109,7 @@ func TestNewClosedCmd_DefaultLimitTwenty(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("TICKETS_DIR", dir)
 	for i := 0; i < 25; i++ {
-		id, err := runCreate(dir, createOptions{title: "T", ticketType: "task", priority: 2})
+		id, err := createLoose(dir, createOptions{title: "T", ticketType: "task", priority: 2})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -154,14 +154,14 @@ func TestNewClosedCmd_MissingLinksClosedTicketStillAppears(t *testing.T) {
 func TestNewClosedCmd_AssigneeAndTagFilters(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("TICKETS_DIR", dir)
-	aliceID, err := runCreate(dir, createOptions{title: "A", ticketType: "task", priority: 2, assignee: "alice", tags: "x"})
+	aliceID, err := createLoose(dir, createOptions{title: "A", ticketType: "task", priority: 2, assignee: "alice", tags: "x"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := runStatus(dir, aliceID, "closed"); err != nil {
 		t.Fatal(err)
 	}
-	bobID, err := runCreate(dir, createOptions{title: "B", ticketType: "task", priority: 2, assignee: "bob", tags: "y"})
+	bobID, err := createLoose(dir, createOptions{title: "B", ticketType: "task", priority: 2, assignee: "bob", tags: "y"})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -4,7 +4,7 @@ import "testing"
 
 func TestRunBranch_EmptyTicketList_ReturnsEmpty(t *testing.T) {
 	repoRoot := newTestRepo(t)
-	branch, err := RunBranch(repoRoot, nil)
+	branch, err := RunBranch(ticketsDir(repoRoot), nil)
 	if err != nil {
 		t.Fatalf("RunBranch: %v", err)
 	}
@@ -17,7 +17,7 @@ func TestRunBranch_ClaimedTicketWithNoBranchNote_ReturnsEmpty(t *testing.T) {
 	repoRoot := newTestRepo(t)
 	ticketID := tkCreate(t, repoRoot, "Claimed but not yet branched")
 
-	branch, err := RunBranch(repoRoot, []string{ticketID})
+	branch, err := RunBranch(ticketsDir(repoRoot), []string{ticketID})
 	if err != nil {
 		t.Fatalf("RunBranch: %v", err)
 	}
@@ -31,7 +31,7 @@ func TestRunBranch_ReturnsClaimedTicketsBranch(t *testing.T) {
 	ticketID := tkCreate(t, repoRoot, "Claimed and branched")
 	tkAddNote(t, repoRoot, ticketID, "branch: feat/shared-goal")
 
-	branch, err := RunBranch(repoRoot, []string{ticketID})
+	branch, err := RunBranch(ticketsDir(repoRoot), []string{ticketID})
 	if err != nil {
 		t.Fatalf("RunBranch: %v", err)
 	}
@@ -49,7 +49,7 @@ func TestRunBranch_FindsItRegardlessOfWhichTicketCarriesIt(t *testing.T) {
 	second := tkCreate(t, repoRoot, "Second ticket, already branched")
 	tkAddNote(t, repoRoot, second, "branch: feat/shared-goal")
 
-	branch, err := RunBranch(repoRoot, []string{first, second})
+	branch, err := RunBranch(ticketsDir(repoRoot), []string{first, second})
 	if err != nil {
 		t.Fatalf("RunBranch: %v", err)
 	}

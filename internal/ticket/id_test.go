@@ -184,7 +184,7 @@ func TestGenerateID_ShapeAndPrefix(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	id, err := GenerateID(ticketsDir)
+	id, err := GenerateID(ticketsDir, ticketsDir)
 	if err != nil {
 		t.Fatalf("GenerateID: %v", err)
 	}
@@ -207,7 +207,7 @@ func TestGenerateID_SortsAfterExistingDateTimeIDs(t *testing.T) {
 	writeTicketFile(t, ticketsDir, "goa-20200101-0000-aaaa.md")
 	writeTicketFile(t, ticketsDir, "goa-ab12.md") // old-shape, coexists
 
-	id, err := GenerateID(ticketsDir)
+	id, err := GenerateID(ticketsDir, ticketsDir)
 	if err != nil {
 		t.Fatalf("GenerateID: %v", err)
 	}
@@ -270,17 +270,88 @@ func TestGenerateID_RetriesOnCollision(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	id, err := GenerateID(ticketsDir)
+	id, err := GenerateID(ticketsDir, ticketsDir)
 	if err != nil {
 		t.Fatalf("GenerateID: %v", err)
 	}
 	writeTicketFile(t, ticketsDir, id+".md")
 
-	id2, err := GenerateID(ticketsDir)
+	id2, err := GenerateID(ticketsDir, ticketsDir)
 	if err != nil {
 		t.Fatalf("GenerateID second call: %v", err)
 	}
 	if id2 == id {
 		t.Errorf("GenerateID returned a colliding id twice: %q", id)
+	}
+}
+
+func TestGenerateID_RunFolderTakesPrefixFromTicketsArea(t *testing.T) {
+	area := filepath.Join(t.TempDir(), "my-repo", ".tickets")
+	runDir := filepath.Join(area, "abc123")
+	if err := os.MkdirAll(runDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	id, err := GenerateID(area, runDir)
+	if err != nil {
+		t.Fatalf("GenerateID: %v", err)
+	}
+
+	re := regexp.MustCompile(`^mr-\d{8}-\d{4}-[a-z0-9]{4}$`)
+	if !re.MatchString(id) {
+		t.Errorf("GenerateID in run folder = %q, want to match %s", id, re.String())
+	}
+}
+
+func TestGenerateID_TicketsDirOverrideKeepsPrefix(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "my-repo", "x")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	id, err := GenerateID(dir, dir)
+	if err != nil {
+		t.Fatalf("GenerateID: %v", err)
+	}
+
+	if re := regexp.MustCompile(`^mr-`); !re.MatchString(id) {
+		t.Errorf("GenerateID under TICKETS_DIR-style folder = %q, want prefix mr-", id)
+	}
+}
+
+func TestGenerateID_CollisionCheckIsInTargetFolder(t *testing.T) {
+	area := filepath.Join(t.TempDir(), "goalship", ".tickets")
+	runDir := filepath.Join(area, "r1")
+	if err := os.MkdirAll(runDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	id, err := GenerateID(area, runDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeTicketFile(t, runDir, id+".md")
+
+	id2, err := GenerateID(area, runDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id2 == id {
+		t.Errorf("GenerateID ignored a collision inside the run folder: %q", id)
+	}
+}
+
+func TestRelativeTicketsDir_UnaffectedByRunFolders(t *testing.T) {
+	t.Setenv("TICKETS_DIR", "")
+	repo := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(repo, ".tickets", "r1"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteRunSummary(filepath.Join(repo, ".tickets", "r1"), RunSummary{RunID: "r1"}); err != nil {
+		t.Fatal(err)
+	}
+
+	rel, ok := RelativeTicketsDir(repo)
+	if !ok || rel != ".tickets" {
+		t.Errorf("RelativeTicketsDir = (%q, %v), want (.tickets, true)", rel, ok)
 	}
 }

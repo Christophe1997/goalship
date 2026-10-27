@@ -4,6 +4,11 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/spf13/cobra"
+
+	"github.com/Christophe1997/goalship/internal/ticket"
+	"github.com/Christophe1997/goalship/internal/ticket/tickettest"
 )
 
 func TestLocateTicketsDir_EnvVarWins(t *testing.T) {
@@ -69,6 +74,38 @@ func TestFindOrInitTicketsDir_NotFoundFallsBackToDotTickets(t *testing.T) {
 	}
 	if got != ".tickets" {
 		t.Errorf("findOrInitTicketsDir = %q, want %q", got, ".tickets")
+	}
+}
+
+func TestEveryTkCommandRegistersRunID(t *testing.T) {
+	var walk func(cmd *cobra.Command)
+	walk = func(cmd *cobra.Command) {
+		for _, sub := range cmd.Commands() {
+			if sub.Flags().Lookup("run-id") == nil {
+				t.Errorf("%q does not register --run-id", sub.CommandPath())
+			}
+			walk(sub)
+		}
+	}
+	walk(NewCmd())
+}
+
+func TestRunID_AE2_TicketsDirOverrideWins(t *testing.T) {
+	repo := newRunRepo(t)
+	startRun(t, repo, "A")
+	tickettest.CreateInRun(t, repo, "A", "In run A")
+	override := t.TempDir()
+	t.Setenv(ticket.TicketsDirEnv, override)
+	id := tickettest.Create(t, repo, "In override")
+
+	for _, runID := range []string{"A", "unknown"} {
+		out, err := execCmd(t, NewLsCmd(), []string{"--run-id", runID})
+		if err != nil {
+			t.Fatalf("ls --run-id %s: %v", runID, err)
+		}
+		if want := id + " [open] - In override\n"; out != want {
+			t.Errorf("ls --run-id %s = %q, want %q", runID, out, want)
+		}
 	}
 }
 

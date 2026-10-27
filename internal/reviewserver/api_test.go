@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -17,7 +18,9 @@ import (
 	"time"
 
 	"github.com/Christophe1997/goalship/internal/ledger"
+	"github.com/Christophe1997/goalship/internal/runfolder"
 	"github.com/Christophe1997/goalship/internal/ticket"
+	"github.com/Christophe1997/goalship/internal/ticket/tickettest"
 )
 
 // fixtureBody mirrors buildCreateBody's layout (internal/cli/tk/create.go)
@@ -473,7 +476,6 @@ func TestPostApprove_SetsApprovedTicketIDs_AndShutsDownServer(t *testing.T) {
 	if err := os.MkdirAll(ticketsDir, 0o755); err != nil {
 		t.Fatalf("mkdir ticketsDir: %v", err)
 	}
-	t.Setenv("TICKETS_DIR", "") // guard against ambient pollution; use Run's default resolution
 	mustSaveTicket(t, ticketsDir, &ticket.Ticket{
 		ID: "goa-app1", Status: "open", Created: "2026-01-01T00:00:00Z", Type: "task", Priority: 2,
 		Body: fixtureBody("Approve me one", "", ""),
@@ -491,9 +493,10 @@ func TestPostApprove_SetsApprovedTicketIDs_AndShutsDownServer(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
 		done <- Run(ctx, Options{
-			RepoRoot: repoRoot,
-			RunID:    "run-a",
-			Stdout:   io.Discard,
+			RepoRoot:   repoRoot,
+			RunID:      "run-a",
+			TicketsDir: ticketsDir,
+			Stdout:     io.Discard,
 			OpenBrowser: func(u string) error {
 				gotURL = u
 				close(urlSeen)
@@ -604,5 +607,163 @@ func TestPatchTicket_MissingOrWrongToken_And_ForeignHost_Refused(t *testing.T) {
 	}
 	if !bytes.Equal(before, after) {
 		t.Errorf("a refused PATCH touched the file:\nbefore: %q\nafter:  %q", before, after)
+	}
+}
+
+// startRun runs the real Run loop in the background and returns its
+// tokened URL once announced, plus the channel Run's result lands on.
+func startRun(t *testing.T, opts Options) (tokenURL string, done chan error) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	urlSeen := make(chan struct{})
+	done = make(chan error, 1)
+	opts.Stdout = io.Discard
+	opts.OpenBrowser = func(u string) error {
+		tokenURL = u
+		close(urlSeen)
+		return nil
+	}
+	go func() { done <- Run(ctx, opts) }()
+
+	select {
+	case <-urlSeen:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for Run to announce its URL")
+	}
+	return tokenURL, done
+}
+
+func apiURL(tokenURL, path string) string {
+	return strings.Replace(tokenURL, "/?token=", path+"?token=", 1)
+}
+
+func getTicketIDs(t *testing.T, tokenURL string) []string {
+	t.Helper()
+	resp, err := http.Get(apiURL(tokenURL, "/api/tickets"))
+	if err != nil {
+		t.Fatalf("GET /api/tickets: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("GET /api/tickets status = %d, body: %s", resp.StatusCode, body)
+	}
+	var ids []string
+	for _, tk := range decodeJSON[[]ticketJSON](t, resp.Body) {
+		ids = append(ids, tk.ID)
+	}
+	slices.Sort(ids)
+	return ids
+}
+
+func patchTitle(t *testing.T, tokenURL, id, title string) int {
+	t.Helper()
+	req, err := http.NewRequest("PATCH", apiURL(tokenURL, "/api/tickets/"+id), jsonReader(t, ticketPatch{Title: &title}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("PATCH /api/tickets/%s: %v", id, err)
+	}
+	resp.Body.Close()
+	return resp.StatusCode
+}
+
+func runFolder(t *testing.T, repoRoot, runID string) string {
+	t.Helper()
+	dir, err := runfolder.RunDir(ticket.ResolveTicketsDir(repoRoot), runID)
+	if err != nil {
+		t.Fatalf("RunDir: %v", err)
+	}
+	return dir
+}
+
+// AE1: with loose tickets and two earlier run folders present, the new
+// run's review lists only its own tickets and approving records exactly
+// those IDs.
+func TestRun_AE1_ReviewListsAndApprovesOnlyTheRunsTickets(t *testing.T) {
+	t.Setenv(ticket.TicketsDirEnv, "")
+	repoRoot := t.TempDir()
+	tickettest.Create(t, repoRoot, "Loose ticket")
+	tickettest.CreateInRun(t, repoRoot, "run-old1", "Earlier run one")
+	tickettest.CreateInRun(t, repoRoot, "run-old2", "Earlier run two")
+	want := []string{
+		tickettest.CreateInRun(t, repoRoot, "run-new", "New run A"),
+		tickettest.CreateInRun(t, repoRoot, "run-new", "New run B"),
+	}
+	slices.Sort(want)
+	mustSaveRunState(t, repoRoot, &ledger.RunState{RunID: "run-new", ReviewState: ledger.ReviewStatePending})
+
+	tokenURL, done := startRun(t, Options{
+		RepoRoot: repoRoot, RunID: "run-new", TicketsDir: runFolder(t, repoRoot, "run-new"), DisableWatch: true,
+	})
+
+	if got := getTicketIDs(t, tokenURL); !slices.Equal(got, want) {
+		t.Errorf("GET /api/tickets ids = %v, want only the run's %v", got, want)
+	}
+
+	resp, err := http.Post(apiURL(tokenURL, "/api/approve"), "application/json", nil)
+	if err != nil {
+		t.Fatalf("POST /api/approve: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("POST /api/approve status = %d", resp.StatusCode)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Run after approve: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for Run to shut down after approve")
+	}
+
+	state, err := ledger.LoadRunState(repoRoot, "run-new")
+	if err != nil {
+		t.Fatalf("LoadRunState: %v", err)
+	}
+	got := slices.Clone(state.ApprovedTicketIDs)
+	slices.Sort(got)
+	if !slices.Equal(got, want) {
+		t.Errorf("approved_ticket_ids = %v, want exactly %v", got, want)
+	}
+}
+
+func TestRun_PatchTicketFromAnotherRun_NotFound(t *testing.T) {
+	t.Setenv(ticket.TicketsDirEnv, "")
+	repoRoot := t.TempDir()
+	foreign := tickettest.CreateInRun(t, repoRoot, "run-other", "Other run's ticket")
+	own := tickettest.CreateInRun(t, repoRoot, "run-new", "Own ticket")
+	mustSaveRunState(t, repoRoot, &ledger.RunState{RunID: "run-new", ReviewState: ledger.ReviewStatePending})
+
+	tokenURL, _ := startRun(t, Options{
+		RepoRoot: repoRoot, RunID: "run-new", TicketsDir: runFolder(t, repoRoot, "run-new"), DisableWatch: true,
+	})
+
+	if code := patchTitle(t, tokenURL, own, "Edited"); code != http.StatusOK {
+		t.Errorf("PATCH own ticket status = %d, want 200", code)
+	}
+	if code := patchTitle(t, tokenURL, foreign, "Hijacked"); code != http.StatusNotFound {
+		t.Errorf("PATCH other run's ticket status = %d, want 404", code)
+	}
+}
+
+func TestRun_LegacyRun_ListsLooseTickets(t *testing.T) {
+	t.Setenv(ticket.TicketsDirEnv, "")
+	repoRoot := t.TempDir()
+	want := []string{tickettest.Create(t, repoRoot, "Loose ticket")}
+	tickettest.CreateInRun(t, repoRoot, "run-other", "Run folder ticket")
+	mustSaveRunState(t, repoRoot, &ledger.RunState{RunID: "run-legacy", ReviewState: ledger.ReviewStatePending})
+
+	tokenURL, _ := startRun(t, Options{
+		RepoRoot: repoRoot, RunID: "run-legacy", TicketsDir: ticket.ResolveTicketsDir(repoRoot), DisableWatch: true,
+	})
+
+	if got := getTicketIDs(t, tokenURL); !slices.Equal(got, want) {
+		t.Errorf("GET /api/tickets ids = %v, want the loose tickets %v", got, want)
 	}
 }

@@ -7,6 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/spf13/cobra"
+
+	"github.com/Christophe1997/goalship/internal/runfolder"
 	"github.com/Christophe1997/goalship/internal/ticket"
 )
 
@@ -65,6 +68,51 @@ func findOrInitTicketsDir() (string, error) {
 	return dir, nil
 }
 
+const runIDFlag = "run-id"
+
+// withRunIDFlag registers --run-id on cmd, which selectTickets reads.
+func withRunIDFlag(cmd *cobra.Command) *cobra.Command {
+	cmd.Flags().String(runIDFlag, "", "Use this run's ticket folder instead of the loose tickets")
+	return cmd
+}
+
+// ticketsLocation is where a tk command works: dir holds its tickets, area
+// is the tickets area dir lives in (dir itself when no run is selected or
+// TICKETS_DIR overrides), and repoRoot is area's parent.
+type ticketsLocation struct {
+	repoRoot, area, dir string
+}
+
+// selectTickets locates the tickets area the way findTicketsDir (or, for
+// a write command, findOrInitTicketsDir) does, then narrows it to the
+// --run-id run's folder.
+func selectTickets(cmd *cobra.Command, write bool) (ticketsLocation, error) {
+	find := findTicketsDir
+	if write {
+		find = findOrInitTicketsDir
+	}
+	area, err := find()
+	if err != nil {
+		return ticketsLocation{}, err
+	}
+	loc := ticketsLocation{repoRoot: filepath.Dir(area), area: area, dir: area}
+
+	runID, err := cmd.Flags().GetString(runIDFlag)
+	if err != nil || runID == "" {
+		return loc, err
+	}
+	if loc.dir, err = runfolder.Resolve(loc.repoRoot, runID, true); err != nil {
+		return ticketsLocation{}, err
+	}
+	return loc, nil
+}
+
+// findSelectedTicketsDir is selectTickets for a read command.
+func findSelectedTicketsDir(cmd *cobra.Command) (string, error) {
+	loc, err := selectTickets(cmd, false)
+	return loc.dir, err
+}
+
 func isDir(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && info.IsDir()
@@ -84,14 +132,73 @@ func resolveOrBashErr(ticketsDir, id string) (string, error) {
 	if err == nil {
 		return path, nil
 	}
+	return "", bashResolveErr(id, err)
+}
+
+// resolveInFolder is resolveOrBashErr for an ID a dependency, link or
+// parent will point at, which must live in loc.dir itself (R11): a miss
+// that names a ticket in another folder of the area is refused rather
+// than reported as not found.
+func resolveInFolder(loc ticketsLocation, id string) (string, error) {
+	path, err := ticket.Resolve(loc.dir, id)
+	if err == nil {
+		return path, nil
+	}
+	if refusal := crossFolderRefusal(loc, id, err); refusal != nil {
+		return "", refusal
+	}
+	return "", bashResolveErr(id, err)
+}
+
+// crossFolderRefusal returns the refusal for id when resolveErr is a miss
+// in loc.dir and id resolves in another tickets folder of loc.area, else
+// nil.
+func crossFolderRefusal(loc ticketsLocation, id string, resolveErr error) error {
+	if !errors.Is(resolveErr, ticket.ErrNotFound) {
+		return nil
+	}
+	area := filepath.Clean(loc.area)
+	runDirs, err := ticket.ListRunDirs(area)
+	if err != nil {
+		return err
+	}
+	for _, dir := range append([]string{area}, runDirs...) {
+		if dir == filepath.Clean(loc.dir) {
+			continue
+		}
+		if _, err := ticket.Resolve(dir, id); err != nil {
+			continue
+		}
+		where := "the loose tickets"
+		if dir != area {
+			runID, _ := runLabel(dir)
+			where = "run " + runID
+		}
+		return fmt.Errorf("Error: ticket '%s' is in %s; dependencies, links and parents must stay within one run",
+			strings.TrimSpace(id), where)
+	}
+	return nil
+}
+
+// runLabel returns a run folder's run ID and goal from its run.json,
+// falling back to the folder name when run.json is unreadable.
+func runLabel(runDir string) (runID, goal string) {
+	s, err := ticket.ReadRunSummary(runDir)
+	if err != nil || s.RunID == "" {
+		return filepath.Base(runDir), ""
+	}
+	return s.RunID, s.Goal
+}
+
+func bashResolveErr(id string, err error) error {
 	trimmed := strings.TrimSpace(id)
 	switch {
 	case errors.Is(err, ticket.ErrAmbiguous):
-		return "", fmt.Errorf("Error: ambiguous ID '%s' matches multiple tickets", trimmed)
+		return fmt.Errorf("Error: ambiguous ID '%s' matches multiple tickets", trimmed)
 	case errors.Is(err, ticket.ErrNotFound):
-		return "", fmt.Errorf("Error: ticket '%s' not found", trimmed)
+		return fmt.Errorf("Error: ticket '%s' not found", trimmed)
 	default:
-		return "", err
+		return err
 	}
 }
 

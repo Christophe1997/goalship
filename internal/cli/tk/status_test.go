@@ -9,7 +9,7 @@ import (
 
 func TestRunStatus_ValidTransitions(t *testing.T) {
 	dir := t.TempDir()
-	id, err := runCreate(dir, createOptions{title: "T", ticketType: "task", priority: 2})
+	id, err := createLoose(dir, createOptions{title: "T", ticketType: "task", priority: 2})
 	if err != nil {
 		t.Fatalf("runCreate: %v", err)
 	}
@@ -34,7 +34,7 @@ func TestRunStatus_ValidTransitions(t *testing.T) {
 
 func TestRunStatus_InvalidStatusErrors(t *testing.T) {
 	dir := t.TempDir()
-	id, err := runCreate(dir, createOptions{title: "T", ticketType: "task", priority: 2})
+	id, err := createLoose(dir, createOptions{title: "T", ticketType: "task", priority: 2})
 	if err != nil {
 		t.Fatalf("runCreate: %v", err)
 	}
@@ -54,7 +54,7 @@ func TestRunStatus_InvalidStatusErrors(t *testing.T) {
 
 func TestRunStatus_ResolvesPartialID(t *testing.T) {
 	dir := t.TempDir()
-	id, err := runCreate(dir, createOptions{title: "T", ticketType: "task", priority: 2})
+	id, err := createLoose(dir, createOptions{title: "T", ticketType: "task", priority: 2})
 	if err != nil {
 		t.Fatalf("runCreate: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestRunStatus_UnknownIDErrors(t *testing.T) {
 func TestStartCloseReopenCmds_DriveStatus(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("TICKETS_DIR", dir)
-	id, err := runCreate(dir, createOptions{title: "T", ticketType: "task", priority: 2})
+	id, err := createLoose(dir, createOptions{title: "T", ticketType: "task", priority: 2})
 	if err != nil {
 		t.Fatalf("runCreate: %v", err)
 	}

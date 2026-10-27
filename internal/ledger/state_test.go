@@ -98,7 +98,8 @@ func TestBytes_KnownFieldsMatchPythonFixtureThenR7Extension(t *testing.T) {
   "review_state": "pending",
   "review_notes": "",
   "review_updated_at": "",
-  "approved_ticket_ids": []
+  "approved_ticket_ids": [],
+  "tickets_dir": null
 }`
 	if suffix != wantSuffix {
 		t.Errorf("R7 suffix = %s, want %s", suffix, wantSuffix)
@@ -164,6 +165,7 @@ func TestRoundTrip_FreshStateFidelity(t *testing.T) {
 		ReviewNotes:         "looks good",
 		ReviewUpdatedAt:     "2026-09-03T00:00:00Z",
 		ApprovedTicketIDs:   []string{"t-1"},
+		TicketsDir:          strPtr(".tickets/abc123def456"),
 	}
 
 	out, err := s.Bytes()
@@ -521,4 +523,17 @@ func equalStrings(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+func TestParseRunState_TicketsDirIsKnownNotExtra(t *testing.T) {
+	s, err := ParseRunState([]byte(`{"run_id": "r1", "tickets_dir": ".tickets/r1"}`))
+	if err != nil {
+		t.Fatalf("ParseRunState: %v", err)
+	}
+	if s.TicketsDir == nil || *s.TicketsDir != ".tickets/r1" {
+		t.Errorf("TicketsDir = %v, want .tickets/r1", s.TicketsDir)
+	}
+	if len(s.Extra) != 0 {
+		t.Errorf("Extra = %v, want tickets_dir parsed as a known field", s.Extra)
+	}
 }

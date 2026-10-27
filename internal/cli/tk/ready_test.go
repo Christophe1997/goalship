@@ -3,12 +3,39 @@ package tk
 import (
 	"bytes"
 	"testing"
+
+	"github.com/Christophe1997/goalship/internal/ticket/tickettest"
 )
+
+// newBlockedRun builds run A holding a blocker and a ticket depending on
+// it, next to a loose ticket that must never show up in run A's output.
+func newBlockedRun(t *testing.T) (blocker, blocked string) {
+	t.Helper()
+	repo := newRunRepo(t)
+	dir := startRun(t, repo, "A")
+	blocker = tickettest.CreateInRun(t, repo, "A", "Blocker")
+	blocked = tickettest.CreateInRun(t, repo, "A", "Blocked")
+	tickettest.DepIn(t, dir, blocked, blocker)
+	tickettest.Create(t, repo, "Loose")
+	return blocker, blocked
+}
+
+func TestNewReadyCmd_RunIDEvaluatesWithinRun(t *testing.T) {
+	blocker, _ := newBlockedRun(t)
+
+	out, err := execCmd(t, NewReadyCmd(), []string{"--run-id", "A"})
+	if err != nil {
+		t.Fatalf("ready --run-id A: %v", err)
+	}
+	if want := blocker + " [P2][open] - Blocker\n"; out != want {
+		t.Errorf("ready --run-id A = %q, want %q", out, want)
+	}
+}
 
 func TestNewReadyCmd_NoDepsIsReady(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("TICKETS_DIR", dir)
-	id, err := runCreate(dir, createOptions{title: "Ready one", ticketType: "task", priority: 2})
+	id, err := createLoose(dir, createOptions{title: "Ready one", ticketType: "task", priority: 2})
 	if err != nil {
 		t.Fatalf("runCreate: %v", err)
 	}
@@ -28,14 +55,14 @@ func TestNewReadyCmd_NoDepsIsReady(t *testing.T) {
 func TestNewReadyCmd_AllDepsClosedIsReady(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("TICKETS_DIR", dir)
-	depID, err := runCreate(dir, createOptions{title: "Dep", ticketType: "task", priority: 2})
+	depID, err := createLoose(dir, createOptions{title: "Dep", ticketType: "task", priority: 2})
 	if err != nil {
 		t.Fatalf("runCreate: %v", err)
 	}
 	if _, err := runStatus(dir, depID, "closed"); err != nil {
 		t.Fatal(err)
 	}
-	id, err := runCreate(dir, createOptions{title: "Main", ticketType: "task", priority: 2})
+	id, err := createLoose(dir, createOptions{title: "Main", ticketType: "task", priority: 2})
 	if err != nil {
 		t.Fatalf("runCreate: %v", err)
 	}
@@ -55,11 +82,11 @@ func TestNewReadyCmd_AllDepsClosedIsReady(t *testing.T) {
 func TestNewReadyCmd_OpenDepIsNotReady(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("TICKETS_DIR", dir)
-	depID, err := runCreate(dir, createOptions{title: "Dep", ticketType: "task", priority: 2})
+	depID, err := createLoose(dir, createOptions{title: "Dep", ticketType: "task", priority: 2})
 	if err != nil {
 		t.Fatalf("runCreate: %v", err)
 	}
-	id, err := runCreate(dir, createOptions{title: "Main", ticketType: "task", priority: 2})
+	id, err := createLoose(dir, createOptions{title: "Main", ticketType: "task", priority: 2})
 	if err != nil {
 		t.Fatalf("runCreate: %v", err)
 	}
@@ -85,7 +112,7 @@ func TestNewReadyCmd_OpenDepIsNotReady(t *testing.T) {
 func TestNewReadyCmd_DanglingDepSilentlyExcludesTicket(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("TICKETS_DIR", dir)
-	id, err := runCreate(dir, createOptions{title: "Has dangling dep", ticketType: "task", priority: 2})
+	id, err := createLoose(dir, createOptions{title: "Has dangling dep", ticketType: "task", priority: 2})
 	if err != nil {
 		t.Fatalf("runCreate: %v", err)
 	}
@@ -105,7 +132,7 @@ func TestNewReadyCmd_DanglingDepSilentlyExcludesTicket(t *testing.T) {
 func TestNewReadyCmd_ClosedTicketNeverReady(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("TICKETS_DIR", dir)
-	id, err := runCreate(dir, createOptions{title: "Closed", ticketType: "task", priority: 2})
+	id, err := createLoose(dir, createOptions{title: "Closed", ticketType: "task", priority: 2})
 	if err != nil {
 		t.Fatalf("runCreate: %v", err)
 	}
@@ -127,11 +154,11 @@ func TestNewReadyCmd_ClosedTicketNeverReady(t *testing.T) {
 func TestNewReadyCmd_SortedByPriorityThenID(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("TICKETS_DIR", dir)
-	idHigh, err := runCreate(dir, createOptions{title: "P3", ticketType: "task", priority: 3})
+	idHigh, err := createLoose(dir, createOptions{title: "P3", ticketType: "task", priority: 3})
 	if err != nil {
 		t.Fatal(err)
 	}
-	idLow, err := runCreate(dir, createOptions{title: "P0", ticketType: "task", priority: 0})
+	idLow, err := createLoose(dir, createOptions{title: "P0", ticketType: "task", priority: 0})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -179,7 +206,7 @@ func TestNewReadyCmd_MalformedClosedDepDoesNotWronglyBlockDependent(t *testing.T
 	t.Setenv("TICKETS_DIR", dir)
 	writeRawTicket(t, dir, "goa-dep1.md",
 		"---\nid: goa-dep1\nstatus: closed\ndeps: []\ncreated: 2026-01-01T00:00:00Z\ntype: task\npriority: 2\n---\n# Malformed but closed dep\n")
-	id, err := runCreate(dir, createOptions{title: "Depends on malformed-but-closed", ticketType: "task", priority: 2})
+	id, err := createLoose(dir, createOptions{title: "Depends on malformed-but-closed", ticketType: "task", priority: 2})
 	if err != nil {
 		t.Fatalf("runCreate: %v", err)
 	}
@@ -199,11 +226,11 @@ func TestNewReadyCmd_MalformedClosedDepDoesNotWronglyBlockDependent(t *testing.T
 func TestNewReadyCmd_AssigneeAndTagFilters(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("TICKETS_DIR", dir)
-	aliceID, err := runCreate(dir, createOptions{title: "A", ticketType: "task", priority: 2, assignee: "alice", tags: "x"})
+	aliceID, err := createLoose(dir, createOptions{title: "A", ticketType: "task", priority: 2, assignee: "alice", tags: "x"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	bobID, err := runCreate(dir, createOptions{title: "B", ticketType: "task", priority: 2, assignee: "bob", tags: "y"})
+	bobID, err := createLoose(dir, createOptions{title: "B", ticketType: "task", priority: 2, assignee: "bob", tags: "y"})
 	if err != nil {
 		t.Fatal(err)
 	}

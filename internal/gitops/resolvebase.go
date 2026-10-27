@@ -92,18 +92,18 @@ func PRState(repoRoot, hostTool, prRef string) (state string, ok bool) {
 	return mapped, known
 }
 
-// ResolveBase looks up ticketID's tk dependencies and applies the
-// dependency-aware branch model — mirrors branching.py's
+// ResolveBase looks up ticketID's tk dependencies in ticketsDir and applies
+// the dependency-aware branch model — mirrors branching.py's
 // resolve_base_for_ticket. hostTool may be "" when no dependency carries a
 // pr: note field (nothing to look up); a dependency that does have one
 // with hostTool == "" always resolves as a lookup failure, same as
 // PRState's default case for an unrecognized tool.
-func ResolveBase(repoRoot, ticketID, trunkBranch, hostTool string) (string, error) {
-	return resolveBase(repoRoot, ticketID, trunkBranch, hostTool, PRState)
+func ResolveBase(repoRoot, ticketsDir, ticketID, trunkBranch, hostTool string) (string, error) {
+	return resolveBase(repoRoot, ticketsDir, ticketID, trunkBranch, hostTool, PRState)
 }
 
-func resolveBase(repoRoot, ticketID, trunkBranch, hostTool string, prState PRStateFunc) (string, error) {
-	matches, err := queryTickets(repoRoot, fmt.Sprintf(`select(.id==%s)`, jqString(ticketID)))
+func resolveBase(repoRoot, ticketsDir, ticketID, trunkBranch, hostTool string, prState PRStateFunc) (string, error) {
+	matches, err := queryTickets(ticketsDir, fmt.Sprintf(`select(.id==%s)`, jqString(ticketID)))
 	if err != nil {
 		return "", err
 	}
@@ -114,7 +114,7 @@ func resolveBase(repoRoot, ticketID, trunkBranch, hostTool string, prState PRSta
 
 	var dependencyPRs []DependencyPR
 	for _, depID := range depIDs {
-		fields, err := noteFieldsForTicket(repoRoot, depID)
+		fields, err := noteFieldsForTicket(ticketsDir, depID)
 		if err != nil {
 			return "", err
 		}

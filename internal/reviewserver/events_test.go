@@ -102,8 +102,6 @@ func runForSSETest(t *testing.T, seedReviewUpdatedAt string) (baseURL string, ca
 	if err := os.MkdirAll(ticketsDir, 0o755); err != nil {
 		t.Fatalf("mkdir ticketsDir: %v", err)
 	}
-	t.Setenv("TICKETS_DIR", "")
-
 	if seedReviewUpdatedAt != "" {
 		mustSaveRunState(t, repoRoot, &ledger.RunState{
 			RunID: "run-a", ReviewState: ledger.ReviewStatePending, ReviewUpdatedAt: seedReviewUpdatedAt,
@@ -118,9 +116,10 @@ func runForSSETest(t *testing.T, seedReviewUpdatedAt string) (baseURL string, ca
 	done = make(chan error, 1)
 	go func() {
 		done <- Run(ctx, Options{
-			RepoRoot: repoRoot,
-			RunID:    "run-a",
-			Stdout:   io.Discard,
+			RepoRoot:   repoRoot,
+			RunID:      "run-a",
+			TicketsDir: ticketsDir,
+			Stdout:     io.Discard,
 			OpenBrowser: func(u string) error {
 				gotURL = u
 				close(urlSeen)
